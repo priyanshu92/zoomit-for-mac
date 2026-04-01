@@ -83,7 +83,10 @@ final class ZoomOverlayController {
     }
 
     func startLiveDraw(preCapturedImage: CGImage? = nil) {
-        // Capture screen and go directly into draw mode — don't use LiveZoom
+        // Dismiss any active zoom overlay first
+        dismiss()
+
+        // Capture screen and go directly into draw mode
         let mouseLocation = NSEvent.mouseLocation
         let image: NSImage?
         let frame: CGRect
