@@ -152,7 +152,10 @@ final class ZoomOverlayController {
 
             if activeMode == .liveZoom {
                 window.level = .floating
+                window.isOpaque = false
+                window.backgroundColor = .clear
                 window.ignoresMouseEvents = true
+                window.hidesOnDeactivate = false
             }
         }
 
@@ -165,11 +168,16 @@ final class ZoomOverlayController {
             window.setFrame(snapshot.screenFrame, display: true)
         }
 
-        NSApp.activate(ignoringOtherApps: true)
-        window.setFrame(snapshot.screenFrame, display: true)
-        window.orderFrontRegardless()
-        window.makeKey()
-        window.makeFirstResponder(overlayView)
+        if activeMode == .liveZoom {
+            window.setFrame(snapshot.screenFrame, display: true)
+            window.orderFrontRegardless()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            window.setFrame(snapshot.screenFrame, display: true)
+            window.orderFrontRegardless()
+            window.makeKey()
+            window.makeFirstResponder(overlayView)
+        }
     }
 
     private func clampedTargetPoint(in snapshot: ScreenSnapshot) -> CGPoint {
