@@ -83,28 +83,19 @@ final class ZoomOverlayController {
     }
 
     func startLiveDraw(preCapturedImage: CGImage? = nil) {
-        // Dismiss any active zoom overlay first
-        dismiss()
-
-        // Capture screen and go directly into draw mode
-        let mouseLocation = NSEvent.mouseLocation
-        let image: NSImage?
-        let frame: CGRect
-
-        if let preCapturedImage,
-           let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
-            image = NSImage(cgImage: preCapturedImage, size: screen.frame.size)
-            frame = screen.frame
-        } else if let snapshot = screenCaptureService.captureScreen(containing: mouseLocation),
-                  let screen = NSScreen.screens.first(where: { $0.frame == snapshot.screenFrame }) {
-            image = NSImage(cgImage: snapshot.image, size: screen.frame.size)
-            frame = snapshot.screenFrame
-        } else {
-            return
+        // Start LiveZoom but with click-to-draw enabled
+        toggle(.liveZoom, preCapturedImage: preCapturedImage)
+        // Override LiveZoom passthrough: LiveDraw needs mouse events
+        overlayView?.clickDrawEnabled = true
+        overlayWindow?.ignoresMouseEvents = false
+        overlayWindow?.level = .screenSaver
+        overlayWindow?.isOpaque = true
+        overlayWindow?.backgroundColor = .black
+        NSApp.activate(ignoringOtherApps: true)
+        if let overlayWindow, let overlayView {
+            overlayWindow.makeKey()
+            overlayWindow.makeFirstResponder(overlayView)
         }
-
-        guard let image else { return }
-        onStartDrawingFromZoom(image, frame)
     }
 
     func dismiss() {
