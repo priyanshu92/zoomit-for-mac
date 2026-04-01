@@ -71,7 +71,9 @@ final class BreakTimerController {
         refreshDisplay()
 
         NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        window.setFrame(screen.frame, display: true)
+        window.orderFrontRegardless()
+        window.makeKey()
         window.makeFirstResponder(overlayView)
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in

@@ -111,9 +111,11 @@ final class DrawOverlayController {
         self.window = window
         self.canvasView = canvas
 
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(canvas)
         NSApp.activate(ignoringOtherApps: true)
+        window.setFrame(screenFrame, display: true)
+        window.orderFrontRegardless()
+        window.makeKey()
+        window.makeFirstResponder(canvas)
     }
 }
 
