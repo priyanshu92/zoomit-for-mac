@@ -1,6 +1,7 @@
 import AppKit
 import AppCore
 import PlatformServices
+import UniformTypeIdentifiers
 
 @MainActor
 struct SnipCaptureResult {
@@ -302,22 +303,31 @@ final class SnipController {
 
         let settings = settingsStore.load()
         let directory = URL(fileURLWithPath: settings.screenshotSaveLocation, isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        } catch {
-            throw SnipControllerError.saveFailed(directory.path)
-        }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let fileName = "\(prefix)-\(formatter.string(from: Date())).\(fileExtension)"
-        let destinationURL = directory.appendingPathComponent(fileName)
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = fileName
+        panel.directoryURL = directory
+        panel.allowedContentTypes = [.png]
+        panel.isExtensionHidden = false
+        panel.title = "Save Screenshot"
+        panel.message = "Choose where to save the screenshot."
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else {
+            throw SnipControllerError.selectionCancelled
+        }
 
         do {
-            try data.write(to: destinationURL, options: .atomic)
-            return destinationURL
+            try data.write(to: url, options: .atomic)
+            return url
         } catch {
-            throw SnipControllerError.saveFailed(destinationURL.path)
+            throw SnipControllerError.saveFailed(url.path)
         }
     }
 }
