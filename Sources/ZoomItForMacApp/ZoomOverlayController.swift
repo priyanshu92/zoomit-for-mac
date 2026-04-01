@@ -134,9 +134,11 @@ final class ZoomOverlayController {
             window.setFrame(snapshot.screenFrame, display: true)
         }
 
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(overlayView)
         NSApp.activate(ignoringOtherApps: true)
+        window.setFrame(snapshot.screenFrame, display: true)
+        window.orderFrontRegardless()
+        window.makeKey()
+        window.makeFirstResponder(overlayView)
     }
 
     private func clampedTargetPoint(in snapshot: ScreenSnapshot) -> CGPoint {
