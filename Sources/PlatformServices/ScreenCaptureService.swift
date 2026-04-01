@@ -43,9 +43,24 @@ public struct MacScreenCaptureService: ScreenCaptureService {
 
     private func makeSnapshot(for screen: NSScreen) -> ScreenSnapshot? {
         guard
-            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
-            let image = CGDisplayCreateImage(displayID)
+            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else {
+            return nil
+        }
+
+        // Try CGWindowListCreateImage first — works on all displays including secondary monitors
+        let bounds = CGDisplayBounds(displayID)
+        if let image = CGWindowListCreateImage(bounds, .optionOnScreenOnly, kCGNullWindowID, .bestResolution) {
+            return ScreenSnapshot(
+                displayID: displayID,
+                image: image,
+                screenFrame: screen.frame,
+                scaleFactor: screen.backingScaleFactor
+            )
+        }
+
+        // Fallback to CGDisplayCreateImage
+        guard let image = CGDisplayCreateImage(displayID) else {
             return nil
         }
 

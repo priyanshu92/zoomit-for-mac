@@ -73,7 +73,11 @@ private func snipEventTapCallback(
         var displayCount: UInt32 = 0
         var displayID: CGDirectDisplayID = 0
         CGGetDisplaysWithPoint(mousePoint, 1, &displayID, &displayCount)
-        preCapturedImage = displayCount > 0 ? CGDisplayCreateImage(displayID) : nil
+        if displayCount > 0 {
+            let bounds = CGDisplayBounds(displayID)
+            preCapturedImage = CGWindowListCreateImage(bounds, .optionOnScreenOnly, kCGNullWindowID, .bestResolution)
+                ?? CGDisplayCreateImage(displayID)
+        }
     }
 
     snipEventHandler?(action, preCapturedImage)
