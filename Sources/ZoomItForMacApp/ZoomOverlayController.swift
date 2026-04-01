@@ -67,9 +67,6 @@ final class ZoomOverlayController {
         renderSnapshot()
 
         if mode == .liveZoom {
-            // Make overlay click-through so user can interact with apps underneath
-            overlayWindow?.ignoresMouseEvents = true
-
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     self?.renderSnapshot()
@@ -152,6 +149,11 @@ final class ZoomOverlayController {
             self.overlayView = overlayView
             overlayWindow = window
             overlayView.clickDrawEnabled = activeMode == .zoom
+
+            if activeMode == .liveZoom {
+                window.level = .floating
+                window.ignoresMouseEvents = true
+            }
         }
 
         lastRenderedImage = renderedImage
