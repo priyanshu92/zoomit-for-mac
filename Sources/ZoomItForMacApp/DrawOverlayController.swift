@@ -58,7 +58,8 @@ final class DrawOverlayController {
     }
 
     private func present(preCapturedImage: CGImage? = nil) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens.first else {
             return
         }
 
@@ -74,10 +75,11 @@ final class DrawOverlayController {
     }
 
     private func present(backgroundImage: NSImage?, frame: CGRect?) {
-        guard let screenFrame = frame ?? NSScreen.main?.frame ?? NSScreen.screens.first?.frame else {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screenFrame = frame ?? NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })?.frame ?? NSScreen.screens.first?.frame else {
             return
         }
-        let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }) ?? NSScreen.main ?? NSScreen.screens.first
+        let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }) ?? NSScreen.screens.first
 
         let window = OverlayWindow(
             contentRect: screenFrame,

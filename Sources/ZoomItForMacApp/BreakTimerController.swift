@@ -36,7 +36,8 @@ final class BreakTimerController {
 
     private func start() {
         let settings = settingsStore.load()
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens.first else {
             return
         }
 
