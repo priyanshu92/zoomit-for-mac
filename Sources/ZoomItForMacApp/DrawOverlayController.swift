@@ -929,7 +929,7 @@ private final class InlineAnnotationTextField: NSTextView {
                 }
             }
         case 53:
-            onCancel?()
+            commit()
         case 123, 125:
             if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
                 onAdjustSize?(-2)
@@ -948,7 +948,7 @@ private final class InlineAnnotationTextField: NSTextView {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        onCancel?()
+        commit()
     }
 
     private func embeddedShortcutAction(for event: NSEvent) -> ShortcutAction? {
