@@ -595,6 +595,7 @@ final class RecordingController {
         ])
 
         window.contentView = panel
+        window.setFrame(frame, display: true)
         window.orderFrontRegardless()
 
         for remaining in stride(from: 3, through: 1, by: -1) {
