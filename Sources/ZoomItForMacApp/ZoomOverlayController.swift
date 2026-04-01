@@ -384,8 +384,8 @@ private final class ZoomOverlayView: NSView {
 
         badgeLabel.stringValue = "\(mode.title) • \(String(format: "%.1fx", zoomFactor)) • \(stateDescription)"
         controlsLabel.stringValue = mode == .liveZoom
-            ? "Left click draws • Up/Down zoom • Drag or A/W/S/D pans • Space toggles follow • Right click/Esc exits"
-            : "Left click draws • Up/Down zoom • Drag or A/W/S/D pans • Space recenters • Right click/Esc exits"
+            ? "Up/Down zoom • Drag or A/W/S/D pans • Space toggles follow • Right click/Esc exits"
+            : "Up/Down zoom • Drag or A/W/S/D pans • Space recenters • Right click/Esc exits"
 
         if abs(panOffset.x) < 1, abs(panOffset.y) < 1 {
             statusLabel.stringValue = isFrozen ? "Focused on the selected point" : "Centered on the cursor"
@@ -461,13 +461,8 @@ private final class ZoomOverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer {
-            lastDragLocation = nil
-            hasDragged = false
-        }
-
-        guard !hasDragged else { return }
-        onStartDrawing?()
+        lastDragLocation = nil
+        hasDragged = false
     }
 
     override func rightMouseDown(with event: NSEvent) {
