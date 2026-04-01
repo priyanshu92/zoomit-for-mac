@@ -635,12 +635,13 @@ private final class DrawingCanvasView: NSView {
         let y = clamp(point.y, min: 18, max: max(18, bounds.height - 44))
 
         let field = InlineAnnotationTextField(frame: NSRect(x: x, y: y, width: width, height: 36))
-        field.placeholderString = ""
         field.font = .systemFont(ofSize: typingFontSize)
         field.drawsBackground = false
         field.backgroundColor = .clear
-        field.isBordered = false
-        field.focusRingType = .none
+        field.isEditable = true
+        field.isSelectable = true
+        field.isRichText = false
+        field.insertionPointColor = lastInkColor.color
 
         // Use current ink color for text
         let textColor = lastInkColor.color
@@ -648,6 +649,10 @@ private final class DrawingCanvasView: NSView {
             field.alignment = alignment
         }
         field.textColor = textColor
+        field.typingAttributes = [
+            .font: NSFont.systemFont(ofSize: typingFontSize),
+            .foregroundColor: textColor,
+        ]
         field.onCommit = { [weak self, weak field] text in
             self?.finishTextAnnotation(text, from: field)
         }
@@ -889,14 +894,16 @@ private final class DrawingCanvasView: NSView {
 }
 
 @MainActor
-private final class InlineAnnotationTextField: NSTextField {
+private final class InlineAnnotationTextField: NSTextView {
     var onCommit: ((String) -> Void)?
     var onCancel: (() -> Void)?
     var onAdjustSize: ((CGFloat) -> Void)?
     var onShortcutAction: ((ShortcutAction) -> Void)?
 
+    override var acceptsFirstResponder: Bool { true }
+
     func commit() {
-        onCommit?(stringValue)
+        onCommit?(string)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -907,26 +914,34 @@ private final class InlineAnnotationTextField: NSTextField {
 
         switch event.keyCode {
         case 36, 76:
-            // Return/Enter inserts newline; Shift+Return commits
+            // Shift+Return commits; plain Return inserts newline
             if event.modifierFlags.contains(.shift) {
                 commit()
-            } else if let editor = currentEditor() as? NSTextView {
-                editor.insertText("\n", replacementRange: editor.selectedRange())
-                // Grow the field to fit new lines
-                if let layoutManager = editor.layoutManager, let textContainer = editor.textContainer {
+            } else {
+                super.insertNewline(nil)
+                // Grow to fit
+                if let layoutManager, let textContainer {
                     layoutManager.ensureLayout(for: textContainer)
                     let textHeight = layoutManager.usedRect(for: textContainer).height + 8
-                    var fieldFrame = self.frame
-                    fieldFrame.size.height = max(36, textHeight)
-                    self.frame = fieldFrame
+                    var f = self.frame
+                    f.size.height = max(36, textHeight)
+                    self.frame = f
                 }
             }
         case 53:
             onCancel?()
         case 123, 125:
-            onAdjustSize?(-2)
+            if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
+                onAdjustSize?(-2)
+            } else {
+                super.keyDown(with: event)
+            }
         case 124, 126:
-            onAdjustSize?(2)
+            if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
+                onAdjustSize?(2)
+            } else {
+                super.keyDown(with: event)
+            }
         default:
             super.keyDown(with: event)
         }
