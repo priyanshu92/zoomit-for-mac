@@ -114,10 +114,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let hotKeys = try CarbonHotKeyCenter()
+            let tapIsActive = snipEventTap != nil
             hotKeys.handler = { [weak self] action in
                 // Skip actions handled by the CGEvent tap to avoid double-firing
-                let eventTapActions: Set<ShortcutAction> = [.draw, .snip, .saveSnip, .ocrSnip]
-                guard !eventTapActions.contains(action) else { return }
+                if tapIsActive {
+                    let eventTapActions: Set<ShortcutAction> = [.draw, .snip, .saveSnip, .ocrSnip]
+                    guard !eventTapActions.contains(action) else { return }
+                }
                 DispatchQueue.main.async {
                     self?.featureCoordinator.trigger(action)
                 }
@@ -159,8 +162,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupSnipEventTap() {
-        // Wire the static handler the C callback uses
         snipEventHandler = { [weak self] action, image in
+            // Use perform on main thread to ensure delivery even during menu tracking
             DispatchQueue.main.async {
                 self?.featureCoordinator.trigger(action, preCapturedImage: image)
             }
