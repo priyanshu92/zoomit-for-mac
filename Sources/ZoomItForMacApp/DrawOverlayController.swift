@@ -366,8 +366,13 @@ private final class DrawingCanvasView: NSView {
         case " ":
             centerCursor()
         case "\u{1b}":
-            cancelTextEditing()
-            onRequestDismiss()
+            if activeTextField != nil {
+                cancelTextEditing()
+            } else if currentMode.usesTextSizing {
+                currentMode = .ink(color: .red, highlight: false)
+            } else {
+                onRequestDismiss()
+            }
         default:
             super.keyDown(with: event)
         }
@@ -383,8 +388,13 @@ private final class DrawingCanvasView: NSView {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        cancelTextEditing()
-        onRequestDismiss()
+        if activeTextField != nil {
+            cancelTextEditing()
+        } else if currentMode.usesTextSizing {
+            currentMode = .ink(color: .red, highlight: false)
+        } else {
+            onRequestDismiss()
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -644,7 +654,6 @@ private final class DrawingCanvasView: NSView {
         }
         field.onCancel = { [weak self, weak field] in
             self?.cancelTextEditing(field)
-            self?.onRequestDismiss()
         }
         field.onAdjustSize = { [weak self] delta in
             self?.adjustFontSize(by: delta)
