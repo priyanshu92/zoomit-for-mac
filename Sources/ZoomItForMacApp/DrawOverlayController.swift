@@ -240,8 +240,12 @@ private final class DrawingCanvasView: NSView {
     private weak var activeTextField: InlineAnnotationTextField?
     private var transientHideTask: DispatchWorkItem?
     private var trackingAreaRef: NSTrackingArea?
+    private var lastInkColor: InkColor = .red
     private var currentMode: ToolMode = .ink(color: .red, highlight: false) {
         didSet {
+            if case let .ink(color, _) = currentMode {
+                lastInkColor = color
+            }
             window?.invalidateCursorRects(for: self)
             if window != nil {
                 flashMessage("\(currentMode.title) — \(currentMode.hint)")
@@ -638,15 +642,10 @@ private final class DrawingCanvasView: NSView {
         field.isBordered = false
         field.focusRingType = .none
 
-        // Use current ink color for text, or white if in blur/non-ink mode
-        let textColor: NSColor
+        // Use current ink color for text
+        let textColor = lastInkColor.color
         if case let .text(alignment) = currentMode {
             field.alignment = alignment
-        }
-        if case let .ink(color, _) = currentMode {
-            textColor = color.color
-        } else {
-            textColor = .white
         }
         field.textColor = textColor
         field.onCommit = { [weak self, weak field] text in
@@ -681,12 +680,7 @@ private final class DrawingCanvasView: NSView {
             return
         }
 
-        let inkColor: NSColor
-        if case let .ink(color, _) = currentMode {
-            inkColor = color.color
-        } else {
-            inkColor = .white
-        }
+        let inkColor = lastInkColor.color
 
         annotations.append(
             .text(
@@ -913,7 +907,14 @@ private final class InlineAnnotationTextField: NSTextField {
 
         switch event.keyCode {
         case 36, 76:
-            commit()
+            // Return/Enter inserts newline; Shift+Return commits
+            if event.modifierFlags.contains(.shift) {
+                commit()
+            } else {
+                // Insert newline into the field
+                let editor = currentEditor()
+                editor?.insertNewline(nil)
+            }
         case 53:
             onCancel?()
         case 123, 125:
