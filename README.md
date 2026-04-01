@@ -17,7 +17,6 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 | Save Snip | `Ctrl+Shift+6` | Screenshot region and save to file via save dialog. |
 | OCR Snip | `Ctrl+Alt+6` | Extract text from a screen region to clipboard. |
 | DemoType | `Ctrl+7` | Simulated typing from clipboard (prefix text with `[start]`). |
-| Panorama Snip | `Ctrl+8` | Capture all displays into a single stitched image. |
 
 ### Draw Mode Tools
 

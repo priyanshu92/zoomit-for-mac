@@ -655,6 +655,7 @@ private final class DrawingCanvasView: NSView {
         ]
         field.onCommit = { [weak self, weak field] text in
             self?.finishTextAnnotation(text, from: field)
+            self?.currentMode = .ink(color: self?.lastInkColor ?? .red, highlight: false)
         }
         field.onCancel = { [weak self, weak field] in
             self?.cancelTextEditing(field)

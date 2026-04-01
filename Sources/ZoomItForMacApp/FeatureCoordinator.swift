@@ -155,21 +155,6 @@ final class FeatureCoordinator {
             return
         }
 
-        if action == .panoramaSnip {
-            guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
-                return
-            }
-
-            do {
-                let result = try snipController.capturePanoramaToClipboard()
-                presentClipboardResultAlert(title: result.title, message: result.message)
-            } catch {
-                presentClipboardResultAlert(title: "Panorama capture failed", message: error.localizedDescription)
-            }
-            return
-        }
-
         if action == .ocrSnip {
             guard permissions.screenRecording == .granted else {
                 presentMissingPermissionAlert(for: action, permissions: permissions)

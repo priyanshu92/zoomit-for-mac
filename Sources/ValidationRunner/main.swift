@@ -28,7 +28,6 @@ enum ValidationRunner {
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.saveSnip]?.windowsStyleDescription == "Ctrl+Shift+6", "Save snip shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.demoType]?.windowsStyleDescription == "Ctrl+7", "DemoType shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.previousDemoType]?.windowsStyleDescription == "Ctrl+Shift+7", "Previous DemoType shortcut mismatch")
-        try expect(ShortcutCatalog.windowsEquivalentDefaults[.panoramaSnip]?.windowsStyleDescription == "Ctrl+8", "Panorama shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.ocrSnip]?.windowsStyleDescription == "Ctrl+Alt+6", "OCR snip shortcut mismatch")
     }
 
@@ -145,18 +144,6 @@ enum ValidationRunner {
         let cropRect = CaptureGeometry.cropRect(for: selection, within: screenFrame, scaleFactor: 2)
 
         try expect(cropRect == CGRect(x: 300, y: 1160, width: 400, height: 240), "Crop rect should convert to pixel coordinates")
-
-        let canvas = CaptureGeometry.panoramaCanvas(for: [
-            CGRect(x: 0, y: 0, width: 1440, height: 900),
-            CGRect(x: 1440, y: 120, width: 1920, height: 1080)
-        ])
-        try expect(canvas == CGRect(x: 0, y: 0, width: 3360, height: 1200), "Panorama canvas should cover all displays")
-
-        let drawRect = CaptureGeometry.panoramaDrawRect(
-            for: CGRect(x: 1440, y: 120, width: 1920, height: 1080),
-            canvas: canvas ?? .zero
-        )
-        try expect(drawRect == CGRect(x: 1440, y: 120, width: 1920, height: 1080), "Panorama draw rect should preserve screen offsets")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

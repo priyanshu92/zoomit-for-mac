@@ -93,34 +93,6 @@ final class SnipController {
         try interactiveCapture(snapshot: snapshot, defaultDestination: .file)
     }
 
-    func capturePanoramaToClipboard() throws -> SnipCaptureResult {
-        let snapshots = screenCaptureService.captureAllScreens()
-        guard !snapshots.isEmpty else {
-            throw SnipControllerError.captureUnavailable
-        }
-
-        let frames = snapshots.map(\.screenFrame)
-        guard let canvas = CaptureGeometry.panoramaCanvas(for: frames) else {
-            throw SnipControllerError.captureUnavailable
-        }
-
-        let image = NSImage(size: canvas.size)
-        image.lockFocus()
-        for snapshot in snapshots.sorted(by: { $0.screenFrame.minX < $1.screenFrame.minX }) {
-            let drawRect = CaptureGeometry.panoramaDrawRect(for: snapshot.screenFrame, canvas: canvas)
-            NSImage(cgImage: snapshot.image, size: snapshot.screenFrame.size).draw(in: drawRect)
-        }
-        image.unlockFocus()
-
-        clipboardService.copy(image: image)
-        let savedURL = try save(image: image, prefix: "ZoomItPanorama", fileExtension: "png")
-
-        return SnipCaptureResult(
-            title: "Panorama copied to clipboard",
-            message: "Stitched \(snapshots.count) displays using their actual arrangement and saved a PNG to \(savedURL.path)."
-        )
-    }
-
     func captureOCRText() throws -> SnipCaptureResult {
         let snapshot = try snapshotUnderMouse()
         return try captureOCRText(from: snapshot)

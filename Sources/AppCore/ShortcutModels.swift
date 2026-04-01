@@ -13,7 +13,6 @@ public enum ShortcutAction: String, CaseIterable, Codable, Hashable, Sendable {
     case saveSnip
     case demoType
     case previousDemoType
-    case panoramaSnip
     case ocrSnip
 
     public var title: String {
@@ -30,7 +29,6 @@ public enum ShortcutAction: String, CaseIterable, Codable, Hashable, Sendable {
         case .saveSnip: "Save Snip"
         case .demoType: "DemoType"
         case .previousDemoType: "Previous DemoType Snippet"
-        case .panoramaSnip: "Panorama Snip"
         case .ocrSnip: "OCR Snip"
         }
     }
@@ -154,7 +152,6 @@ public enum ShortcutCatalog {
         .saveSnip: .init(key: "6", keyCode: 22, modifiers: [.control, .shift]),
         .demoType: .init(key: "7", keyCode: 26, modifiers: [.control]),
         .previousDemoType: .init(key: "7", keyCode: 26, modifiers: [.control, .shift]),
-        .panoramaSnip: .init(key: "8", keyCode: 28, modifiers: [.control]),
         .ocrSnip: .init(key: "6", keyCode: 22, modifiers: [.control, .option]),
     ]
 
