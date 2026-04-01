@@ -121,7 +121,7 @@ final class StatusItemController: NSObject {
     private func makeStatusItemImage() -> NSImage? {
         let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
         let image = NSImage(
-            systemSymbolName: "scope",
+            systemSymbolName: "magnifyingglass",
             accessibilityDescription: "ZoomIt"
         )
         let configuredImage = image?.withSymbolConfiguration(configuration)
