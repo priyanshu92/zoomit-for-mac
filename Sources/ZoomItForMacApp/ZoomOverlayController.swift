@@ -123,6 +123,7 @@ final class ZoomOverlayController {
             window.contentView = overlayView
             self.overlayView = overlayView
             overlayWindow = window
+            overlayView.clickDrawEnabled = activeMode == .zoom
         }
 
         lastRenderedImage = renderedImage
@@ -346,6 +347,7 @@ private final class ZoomOverlayView: NSView {
     var onToggleFreeze: (() -> Void)?
     var onPointerMoved: ((CGPoint) -> Void)?
     var onStartDrawing: (() -> Void)?
+    var clickDrawEnabled = false
 
     private let imageView = NSImageView()
     private let badgeLabel = NSTextField(labelWithString: "")
@@ -385,7 +387,7 @@ private final class ZoomOverlayView: NSView {
         badgeLabel.stringValue = "\(mode.title) • \(String(format: "%.1fx", zoomFactor)) • \(stateDescription)"
         controlsLabel.stringValue = mode == .liveZoom
             ? "Up/Down zoom • Drag or A/W/S/D pans • Space toggles follow • Right click/Esc exits"
-            : "Up/Down zoom • Drag or A/W/S/D pans • Space recenters • Right click/Esc exits"
+            : "Click to draw • Up/Down zoom • Drag or A/W/S/D pans • Space recenters • Right click/Esc exits"
 
         if abs(panOffset.x) < 1, abs(panOffset.y) < 1 {
             statusLabel.stringValue = isFrozen ? "Focused on the selected point" : "Centered on the cursor"
@@ -461,8 +463,14 @@ private final class ZoomOverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        lastDragLocation = nil
-        hasDragged = false
+        defer {
+            lastDragLocation = nil
+            hasDragged = false
+        }
+
+        if clickDrawEnabled, !hasDragged {
+            onStartDrawing?()
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
