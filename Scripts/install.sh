@@ -31,6 +31,12 @@ mkdir -p "$RESOURCES_DIR"
 
 cp "$EXECUTABLE" "$MACOS_DIR/ZoomItForMacApp"
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "$REPO_DIR/Resources/AppIcon.icns" ]; then
+    cp "$REPO_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+
 cat > "$CONTENTS_DIR/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
