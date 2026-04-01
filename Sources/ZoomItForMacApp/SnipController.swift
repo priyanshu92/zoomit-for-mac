@@ -368,6 +368,8 @@ private final class SnipRegionSelector {
         self.window = window
         self.overlayView = overlayView
 
+        NSApp.activate(ignoringOtherApps: true)
+        window.setFrame(screen.frame, display: true)
         window.orderFrontRegardless()
         window.makeKey()
         window.makeFirstResponder(overlayView)
