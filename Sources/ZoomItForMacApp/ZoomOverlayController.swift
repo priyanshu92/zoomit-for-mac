@@ -23,6 +23,7 @@ final class ZoomOverlayController {
     private var overlayWindow: NSWindow?
     private weak var overlayView: ZoomOverlayView?
     private var refreshTimer: Timer?
+    private var keyMonitor: Any?
     private var zoomFactor: CGFloat = 2.0
     private var trackedMouseLocation: CGPoint = .zero
     private var manualPanOffset: CGPoint = .zero
@@ -66,9 +67,19 @@ final class ZoomOverlayController {
         renderSnapshot()
 
         if mode == .liveZoom {
+            // Make overlay click-through so user can interact with apps underneath
+            overlayWindow?.ignoresMouseEvents = true
+
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     self?.renderSnapshot()
+                }
+            }
+
+            // Use global key monitor since the window doesn't receive keyboard events
+            keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                DispatchQueue.main.async {
+                    self?.handleLiveZoomKeyEvent(event)
                 }
             }
         }
@@ -82,6 +93,10 @@ final class ZoomOverlayController {
     func dismiss() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
         overlayWindow?.orderOut(nil)
         overlayWindow = nil
         overlayView = nil
@@ -91,6 +106,19 @@ final class ZoomOverlayController {
         frozenSnapshot = nil
         lastRenderedImage = nil
         lastRenderedFrame = nil
+    }
+
+    private func handleLiveZoomKeyEvent(_ event: NSEvent) {
+        switch event.keyCode {
+        case 53: // Esc
+            dismiss()
+        case 126: // Up arrow
+            adjustZoom(by: 0.2)
+        case 125: // Down arrow
+            adjustZoom(by: -0.2)
+        default:
+            break
+        }
     }
 
     private func renderSnapshot() {
