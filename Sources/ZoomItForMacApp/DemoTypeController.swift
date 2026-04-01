@@ -58,13 +58,11 @@ final class DemoTypeController {
 
     private func start() {
         let clipboardText = NSPasteboard.general.string(forType: .string) ?? ""
-        let text: String
-        if clipboardText.hasPrefix("[start]") {
-            text = String(clipboardText.dropFirst("[start]".count))
-        } else {
-            let settings = settingsStore.load()
-            text = settings.trimmedDemoTypeText
+        guard clipboardText.hasPrefix("[start]") else {
+            NSSound.beep()
+            return
         }
+        let text = String(clipboardText.dropFirst("[start]".count))
 
         guard !text.isEmpty else {
             NSSound.beep()
