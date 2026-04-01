@@ -610,7 +610,6 @@ private final class DrawingCanvasView: NSView {
 
     private func beginTextAnnotation(at point: CGPoint) {
         cancelTextEditing()
-        flashMessage(currentMode.title + " — type your note and press Return to place it")
 
         let width: CGFloat = 360
         let x: CGFloat
@@ -622,16 +621,24 @@ private final class DrawingCanvasView: NSView {
         let y = clamp(point.y, min: 18, max: max(18, bounds.height - 44))
 
         let field = InlineAnnotationTextField(frame: NSRect(x: x, y: y, width: width, height: 36))
-        field.placeholderString = "Type note and press Return"
+        field.placeholderString = ""
         field.font = .systemFont(ofSize: typingFontSize)
-        field.textColor = .black
-        field.drawsBackground = true
-        field.backgroundColor = .white.withAlphaComponent(0.96)
+        field.drawsBackground = false
+        field.backgroundColor = .clear
         field.isBordered = false
         field.focusRingType = .none
+
+        // Use current ink color for text, or white if in blur/non-ink mode
+        let textColor: NSColor
         if case let .text(alignment) = currentMode {
             field.alignment = alignment
         }
+        if case let .ink(color, _) = currentMode {
+            textColor = color.color
+        } else {
+            textColor = .white
+        }
+        field.textColor = textColor
         field.onCommit = { [weak self, weak field] text in
             self?.finishTextAnnotation(text, from: field)
         }
@@ -665,14 +672,21 @@ private final class DrawingCanvasView: NSView {
             return
         }
 
+        let inkColor: NSColor
+        if case let .ink(color, _) = currentMode {
+            inkColor = color.color
+        } else {
+            inkColor = .white
+        }
+
         annotations.append(
             .text(
                 TextAnnotation(
                     point: origin,
                     text: trimmedText,
                     fontSize: typingFontSize,
-                    color: .white,
-                    backgroundColor: NSColor.black.withAlphaComponent(0.72),
+                    color: inkColor,
+                    backgroundColor: .clear,
                     alignment: alignment
                 )
             )
