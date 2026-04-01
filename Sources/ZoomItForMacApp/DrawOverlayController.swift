@@ -910,10 +910,16 @@ private final class InlineAnnotationTextField: NSTextField {
             // Return/Enter inserts newline; Shift+Return commits
             if event.modifierFlags.contains(.shift) {
                 commit()
-            } else {
-                // Insert newline into the field
-                let editor = currentEditor()
-                editor?.insertNewline(nil)
+            } else if let editor = currentEditor() as? NSTextView {
+                editor.insertText("\n", replacementRange: editor.selectedRange())
+                // Grow the field to fit new lines
+                if let layoutManager = editor.layoutManager, let textContainer = editor.textContainer {
+                    layoutManager.ensureLayout(for: textContainer)
+                    let textHeight = layoutManager.usedRect(for: textContainer).height + 8
+                    var fieldFrame = self.frame
+                    fieldFrame.size.height = max(36, textHeight)
+                    self.frame = fieldFrame
+                }
             }
         case 53:
             onCancel?()
