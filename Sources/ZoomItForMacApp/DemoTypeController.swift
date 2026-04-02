@@ -144,7 +144,6 @@ final class DemoTypeController {
                         let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
                     else { continue }
                     down.keyboardSetUnicodeString(stringLength: string.utf16.count, unicodeString: Array(string.utf16))
-                    up.keyboardSetUnicodeString(stringLength: string.utf16.count, unicodeString: Array(string.utf16))
                     down.post(tap: .cghidEventTap)
                     up.post(tap: .cghidEventTap)
                 }
