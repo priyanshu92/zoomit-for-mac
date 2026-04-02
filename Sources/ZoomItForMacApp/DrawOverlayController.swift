@@ -721,7 +721,6 @@ private final class DrawingCanvasView: NSView {
         guard !annotations.isEmpty else { return }
         annotations.removeLast()
         needsDisplay = true
-        flashMessage(annotations.isEmpty ? "Undid last annotation" : "Undid last annotation • \(annotations.count) remaining")
     }
 
     private func clearAnnotations() {
