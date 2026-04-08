@@ -32,6 +32,10 @@ final class DrawOverlayController {
         window != nil
     }
 
+    func activateRedact() {
+        canvasView?.switchToRedact()
+    }
+
     func currentSnapshot() -> ScreenSnapshot? {
         guard
             let window,
@@ -168,7 +172,6 @@ private final class DrawingCanvasView: NSView {
 
     private enum ToolMode: Equatable {
         case ink(color: InkColor, highlight: Bool)
-        case blur
         case redact
         case text(alignment: NSTextAlignment)
 
@@ -176,8 +179,6 @@ private final class DrawingCanvasView: NSView {
             switch self {
             case let .ink(color, highlight):
                 return highlight ? "\(color.title) Highlight" : "\(color.title) Pen"
-            case .blur:
-                return "Blur Pen"
             case .redact:
                 return "Redact"
             case let .text(alignment):
@@ -189,8 +190,6 @@ private final class DrawingCanvasView: NSView {
             switch self {
             case .ink:
                 return "Hold Shift for line, Ctrl for rectangle, Tab for ellipse, Ctrl+Shift for arrow"
-            case .blur:
-                return "Mask content with an opaque brush"
             case .redact:
                 return "Draw filled rectangles to permanently obscure content"
             case let .text(alignment):
@@ -224,7 +223,6 @@ private final class DrawingCanvasView: NSView {
         let path: NSBezierPath
         let color: NSColor
         let lineWidth: CGFloat
-        let isBlur: Bool
         let isRedact: Bool
     }
 
@@ -253,6 +251,7 @@ private final class DrawingCanvasView: NSView {
                 lastInkColor = color
             }
             window?.invalidateCursorRects(for: self)
+            activeCursor.set()
             if window != nil {
                 flashMessage("\(currentMode.title) — \(currentMode.hint)")
             }
@@ -273,6 +272,10 @@ private final class DrawingCanvasView: NSView {
     private var isTabShapeModifierActive = false
 
     override var acceptsFirstResponder: Bool { true }
+
+    func switchToRedact() {
+        currentMode = .redact
+    }
 
     init(
         frame frameRect: NSRect,
@@ -325,7 +328,7 @@ private final class DrawingCanvasView: NSView {
             draw(currentStroke)
         }
 
-        drawCursorPreview()
+        // Cursor preview circle removed; draw mode uses a normal arrow cursor.
     }
 
     override func keyDown(with event: NSEvent) {
@@ -363,7 +366,6 @@ private final class DrawingCanvasView: NSView {
         case "y": currentMode = .ink(color: .yellow, highlight: event.modifierFlags.contains(.shift))
         case "o": currentMode = .ink(color: .orange, highlight: event.modifierFlags.contains(.shift))
         case "p": currentMode = .ink(color: .pink, highlight: event.modifierFlags.contains(.shift))
-        case "x": currentMode = .blur
         case "q": currentMode = .redact
         case "t": currentMode = .text(alignment: event.modifierFlags.contains(.shift) ? .right : .left)
         case "w": toggleBackgroundMode(.whiteboard)
@@ -410,11 +412,13 @@ private final class DrawingCanvasView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         pointerLocation = convert(event.locationInWindow, from: nil)
+        activeCursor.set()
         needsDisplay = true
     }
 
     override func mouseEntered(with event: NSEvent) {
         pointerLocation = convert(event.locationInWindow, from: nil)
+        activeCursor.set()
         needsDisplay = true
     }
 
@@ -480,8 +484,18 @@ private final class DrawingCanvasView: NSView {
         adjustSizing(by: event.scrollingDeltaY > 0 ? 2 : -2)
     }
 
+    private var activeCursor: NSCursor {
+        if currentMode.usesTextSizing {
+            return .iBeam
+        } else if case .redact = currentMode {
+            return .arrow
+        } else {
+            return .arrow
+        }
+    }
+
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: currentMode.usesTextSizing ? .iBeam : .crosshair)
+        addCursorRect(bounds, cursor: activeCursor)
     }
 
     private func drawBackground(in dirtyRect: NSRect) {
@@ -568,9 +582,6 @@ private final class DrawingCanvasView: NSView {
     }
 
     private func shapeKind(for modifierFlags: NSEvent.ModifierFlags) -> ShapeKind {
-        if case .blur = currentMode {
-            return .freehand
-        }
         if case .redact = currentMode {
             return .rectangle
         }
@@ -623,12 +634,6 @@ private final class DrawingCanvasView: NSView {
             path: path,
             color: effectiveStrokeColor,
             lineWidth: effectiveStrokeWidth,
-            isBlur: {
-                if case .blur = currentMode {
-                    return true
-                }
-                return false
-            }(),
             isRedact: {
                 if case .redact = currentMode {
                     return true
@@ -782,8 +787,6 @@ private final class DrawingCanvasView: NSView {
         switch currentMode {
         case let .ink(color, highlight):
             return highlight ? color.color.withAlphaComponent(0.35) : color.color
-        case .blur:
-            return NSColor.black.withAlphaComponent(0.72)
         case .redact:
             return .black
         case .text:
@@ -795,8 +798,6 @@ private final class DrawingCanvasView: NSView {
         switch currentMode {
         case let .ink(_, highlight):
             return highlight ? max(strokeSize * 2.6, strokeSize + 10) : strokeSize
-        case .blur:
-            return max(strokeSize * 3.4, strokeSize + 16)
         case .redact:
             return strokeSize
         case .text:
@@ -833,11 +834,6 @@ private final class DrawingCanvasView: NSView {
         stroke.path.lineWidth = stroke.lineWidth
 
         stroke.path.stroke()
-        if stroke.isBlur {
-            NSColor.white.withAlphaComponent(0.08).setStroke()
-            stroke.path.lineWidth = max(1, stroke.lineWidth * 0.16)
-            stroke.path.stroke()
-        }
 
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -865,18 +861,6 @@ private final class DrawingCanvasView: NSView {
         )
     }
 
-    private func drawCursorPreview() {
-        guard !currentMode.usesTextSizing, currentMode != .redact, let pointerLocation, bounds.contains(pointerLocation) else { return }
-
-        NSGraphicsContext.saveGraphicsState()
-        let diameter = clamp(effectiveStrokeWidth + 10, min: 14, max: 120)
-        let previewRect = CGRect(x: pointerLocation.x - diameter / 2, y: pointerLocation.y - diameter / 2, width: diameter, height: diameter)
-        let previewPath = NSBezierPath(ovalIn: previewRect)
-        NSColor.white.withAlphaComponent(0.9).setStroke()
-        previewPath.lineWidth = 1.5
-        previewPath.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-    }
 
     private func clamp(_ value: CGFloat, min lowerBound: CGFloat, max upperBound: CGFloat) -> CGFloat {
         Swift.max(lowerBound, Swift.min(value, upperBound))

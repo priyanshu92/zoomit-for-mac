@@ -26,7 +26,6 @@ While in draw mode (`Ctrl+1` click or `Ctrl+2`):
 |-----|------|
 | `R/G/B/Y/O/P` | Ink color (Red/Green/Blue/Yellow/Orange/Pink) |
 | `Shift+color` | Highlight mode |
-| `X` | Blur pen |
 | `T` | Text tool (`Shift+T` for right-aligned) |
 | `W` / `K` | Whiteboard / Blackboard background |
 | `Shift` hold | Straight line |
