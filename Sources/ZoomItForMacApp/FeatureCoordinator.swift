@@ -75,7 +75,11 @@ final class FeatureCoordinator {
         }
 
         if action == .draw {
-            drawOverlayController.toggle(preCapturedImage: preCapturedImage)
+            if drawOverlayController.isActive {
+                drawOverlayController.activateRedact()
+            } else {
+                drawOverlayController.toggle(preCapturedImage: preCapturedImage)
+            }
             return
         }
 
