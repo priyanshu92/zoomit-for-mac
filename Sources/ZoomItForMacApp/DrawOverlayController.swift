@@ -174,6 +174,7 @@ private final class DrawingCanvasView: NSView {
         case ink(color: InkColor, highlight: Bool)
         case redact
         case text(alignment: NSTextAlignment)
+        case number
 
         var title: String {
             switch self {
@@ -183,6 +184,8 @@ private final class DrawingCanvasView: NSView {
                 return "Redact"
             case let .text(alignment):
                 return alignment == .right ? "Right-aligned Text" : "Text"
+            case .number:
+                return "Numbered Marker"
             }
         }
 
@@ -194,6 +197,8 @@ private final class DrawingCanvasView: NSView {
                 return "Draw filled rectangles to permanently obscure content"
             case let .text(alignment):
                 return alignment == .right ? "Click to place right-aligned text" : "Click to place left-aligned text"
+            case .number:
+                return "Click to place numbered markers"
             }
         }
 
@@ -216,6 +221,7 @@ private final class DrawingCanvasView: NSView {
     private enum Annotation {
         case stroke(StrokeAnnotation)
         case text(TextAnnotation)
+        case number(NumberAnnotation)
     }
 
     private struct StrokeAnnotation {
@@ -233,6 +239,12 @@ private final class DrawingCanvasView: NSView {
         let color: NSColor
         let backgroundColor: NSColor
         let alignment: NSTextAlignment
+    }
+
+    private struct NumberAnnotation {
+        let center: CGPoint
+        let number: Int
+        let radius: CGFloat
     }
 
     private let settingsStore: AppSettingsStore
@@ -270,6 +282,7 @@ private final class DrawingCanvasView: NSView {
     private var strokeSize: CGFloat = 6
     private var typingFontSize: CGFloat
     private var isTabShapeModifierActive = false
+    private var numberCounter: Int = 1
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -367,6 +380,7 @@ private final class DrawingCanvasView: NSView {
         case "o": currentMode = .ink(color: .orange, highlight: event.modifierFlags.contains(.shift))
         case "p": currentMode = .ink(color: .pink, highlight: event.modifierFlags.contains(.shift))
         case "q": currentMode = .redact
+        case "n": currentMode = .number
         case "t": currentMode = .text(alignment: event.modifierFlags.contains(.shift) ? .right : .left)
         case "w": toggleBackgroundMode(.whiteboard)
         case "k": toggleBackgroundMode(.blackboard)
@@ -434,6 +448,14 @@ private final class DrawingCanvasView: NSView {
 
         if currentMode.usesTextSizing {
             beginTextAnnotation(at: point)
+            return
+        }
+
+        if case .number = currentMode {
+            let radius = max(16, strokeSize * 2.5)
+            annotations.append(.number(NumberAnnotation(center: point, number: numberCounter, radius: radius)))
+            numberCounter += 1
+            needsDisplay = true
             return
         }
 
@@ -570,7 +592,7 @@ private final class DrawingCanvasView: NSView {
 
     private func showHelp() {
         flashMessage(
-            "Left click draws • Hold Shift line • Hold Ctrl rectangle • Hold Tab ellipse • Hold Ctrl+Shift arrow • Q redact • W whiteboard • K blackboard • T/Shift+T text • Ctrl+scroll or arrows size • E clear • ⌘Z undo • Space center • Esc/right-click exit",
+            "Left click draws • Hold Shift line • Hold Ctrl rectangle • Hold Tab ellipse • Hold Ctrl+Shift arrow • Q redact • N numbered markers • W whiteboard • K blackboard • T/Shift+T text • Ctrl+scroll or arrows size • E clear • ⌘Z undo • Space center • Esc/right-click exit",
             duration: 5
         )
     }
@@ -740,7 +762,10 @@ private final class DrawingCanvasView: NSView {
     private func undoLastAnnotation() {
         cancelTextEditing()
         guard !annotations.isEmpty else { return }
-        annotations.removeLast()
+        let removed = annotations.removeLast()
+        if case .number = removed {
+            numberCounter = max(1, numberCounter - 1)
+        }
         needsDisplay = true
     }
 
@@ -748,6 +773,7 @@ private final class DrawingCanvasView: NSView {
         cancelTextEditing()
         annotations.removeAll()
         currentStroke = nil
+        numberCounter = 1
         needsDisplay = true
         flashMessage("Cleared all annotations")
     }
@@ -791,6 +817,8 @@ private final class DrawingCanvasView: NSView {
             return .black
         case .text:
             return .white
+        case .number:
+            return .systemRed
         }
     }
 
@@ -802,6 +830,8 @@ private final class DrawingCanvasView: NSView {
             return strokeSize
         case .text:
             return strokeSize
+        case .number:
+            return strokeSize
         }
     }
 
@@ -811,6 +841,8 @@ private final class DrawingCanvasView: NSView {
             draw(stroke)
         case let .text(text):
             draw(text)
+        case let .number(number):
+            draw(number)
         }
     }
 
@@ -859,6 +891,42 @@ private final class DrawingCanvasView: NSView {
             in: backgroundRect.insetBy(dx: 11, dy: 7),
             withAttributes: attributes
         )
+    }
+
+    private func draw(_ marker: NumberAnnotation) {
+        NSGraphicsContext.saveGraphicsState()
+
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+        shadow.shadowBlurRadius = 5
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        shadow.set()
+
+        let circleRect = CGRect(
+            x: marker.center.x - marker.radius,
+            y: marker.center.y - marker.radius,
+            width: marker.radius * 2,
+            height: marker.radius * 2
+        )
+        let circlePath = NSBezierPath(ovalIn: circleRect)
+        NSColor.systemRed.setFill()
+        circlePath.fill()
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        let label = "\(marker.number)"
+        let fontSize = marker.radius * 1.1
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+            .foregroundColor: NSColor.white,
+        ]
+        let string = NSString(string: label)
+        let textSize = string.size(withAttributes: attributes)
+        let textOrigin = CGPoint(
+            x: marker.center.x - textSize.width / 2,
+            y: marker.center.y - textSize.height / 2
+        )
+        string.draw(at: textOrigin, withAttributes: attributes)
     }
 
 
