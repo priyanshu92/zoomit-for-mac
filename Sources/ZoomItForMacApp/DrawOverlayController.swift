@@ -169,6 +169,7 @@ private final class DrawingCanvasView: NSView {
     private enum ToolMode: Equatable {
         case ink(color: InkColor, highlight: Bool)
         case blur
+        case redact
         case text(alignment: NSTextAlignment)
 
         var title: String {
@@ -177,6 +178,8 @@ private final class DrawingCanvasView: NSView {
                 return highlight ? "\(color.title) Highlight" : "\(color.title) Pen"
             case .blur:
                 return "Blur Pen"
+            case .redact:
+                return "Redact"
             case let .text(alignment):
                 return alignment == .right ? "Right-aligned Text" : "Text"
             }
@@ -188,6 +191,8 @@ private final class DrawingCanvasView: NSView {
                 return "Hold Shift for line, Ctrl for rectangle, Tab for ellipse, Ctrl+Shift for arrow"
             case .blur:
                 return "Mask content with an opaque brush"
+            case .redact:
+                return "Draw filled rectangles to permanently obscure content"
             case let .text(alignment):
                 return alignment == .right ? "Click to place right-aligned text" : "Click to place left-aligned text"
             }
@@ -220,6 +225,7 @@ private final class DrawingCanvasView: NSView {
         let color: NSColor
         let lineWidth: CGFloat
         let isBlur: Bool
+        let isRedact: Bool
     }
 
     private struct TextAnnotation {
@@ -358,6 +364,7 @@ private final class DrawingCanvasView: NSView {
         case "o": currentMode = .ink(color: .orange, highlight: event.modifierFlags.contains(.shift))
         case "p": currentMode = .ink(color: .pink, highlight: event.modifierFlags.contains(.shift))
         case "x": currentMode = .blur
+        case "q": currentMode = .redact
         case "t": currentMode = .text(alignment: event.modifierFlags.contains(.shift) ? .right : .left)
         case "w": toggleBackgroundMode(.whiteboard)
         case "k": toggleBackgroundMode(.blackboard)
@@ -549,7 +556,7 @@ private final class DrawingCanvasView: NSView {
 
     private func showHelp() {
         flashMessage(
-            "Left click draws • Hold Shift line • Hold Ctrl rectangle • Hold Tab ellipse • Hold Ctrl+Shift arrow • W whiteboard • K blackboard • T/Shift+T text • Ctrl+scroll or arrows size • E clear • ⌘Z undo • Space center • Esc/right-click exit",
+            "Left click draws • Hold Shift line • Hold Ctrl rectangle • Hold Tab ellipse • Hold Ctrl+Shift arrow • Q redact • W whiteboard • K blackboard • T/Shift+T text • Ctrl+scroll or arrows size • E clear • ⌘Z undo • Space center • Esc/right-click exit",
             duration: 5
         )
     }
@@ -563,6 +570,9 @@ private final class DrawingCanvasView: NSView {
     private func shapeKind(for modifierFlags: NSEvent.ModifierFlags) -> ShapeKind {
         if case .blur = currentMode {
             return .freehand
+        }
+        if case .redact = currentMode {
+            return .rectangle
         }
 
         if modifierFlags.contains(.control), modifierFlags.contains(.shift) {
@@ -615,6 +625,12 @@ private final class DrawingCanvasView: NSView {
             lineWidth: effectiveStrokeWidth,
             isBlur: {
                 if case .blur = currentMode {
+                    return true
+                }
+                return false
+            }(),
+            isRedact: {
+                if case .redact = currentMode {
                     return true
                 }
                 return false
@@ -768,6 +784,8 @@ private final class DrawingCanvasView: NSView {
             return highlight ? color.color.withAlphaComponent(0.35) : color.color
         case .blur:
             return NSColor.black.withAlphaComponent(0.72)
+        case .redact:
+            return .black
         case .text:
             return .white
         }
@@ -779,6 +797,8 @@ private final class DrawingCanvasView: NSView {
             return highlight ? max(strokeSize * 2.6, strokeSize + 10) : strokeSize
         case .blur:
             return max(strokeSize * 3.4, strokeSize + 16)
+        case .redact:
+            return strokeSize
         case .text:
             return strokeSize
         }
@@ -795,6 +815,14 @@ private final class DrawingCanvasView: NSView {
 
     private func draw(_ stroke: StrokeAnnotation) {
         NSGraphicsContext.saveGraphicsState()
+
+        if stroke.isRedact {
+            stroke.color.setFill()
+            stroke.path.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
+
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
         shadow.shadowBlurRadius = 4
@@ -838,7 +866,7 @@ private final class DrawingCanvasView: NSView {
     }
 
     private func drawCursorPreview() {
-        guard !currentMode.usesTextSizing, let pointerLocation, bounds.contains(pointerLocation) else { return }
+        guard !currentMode.usesTextSizing, currentMode != .redact, let pointerLocation, bounds.contains(pointerLocation) else { return }
 
         NSGraphicsContext.saveGraphicsState()
         let diameter = clamp(effectiveStrokeWidth + 10, min: 14, max: 120)
