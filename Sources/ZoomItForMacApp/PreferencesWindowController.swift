@@ -100,6 +100,13 @@ final class PreferencesWindowController: NSWindowController {
         refreshPermissionsUI()
     }
 
+    func showPermissions() {
+        selectSection(.permissions)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     // MARK: - Data Loading
 
     private func loadPersistedValuesIntoForm() {

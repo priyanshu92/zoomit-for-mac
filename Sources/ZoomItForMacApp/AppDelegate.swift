@@ -96,7 +96,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyCenter: GlobalHotKeyCenter?
     private var statusController: StatusItemController?
     private var preferencesController: PreferencesWindowController?
-    private var startupPermissionsController: StartupPermissionsWindowController?
     private lazy var featureCoordinator = FeatureCoordinator(
         shortcutStore: shortcutStore,
         settingsStore: settingsStore,
@@ -144,11 +143,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             delegate: self
         )
 
-        startupPermissionsController = StartupPermissionsWindowController(
-            permissionsService: permissionsService,
-            delegate: self
-        )
-        startupPermissionsController?.presentIfNeeded()
+        // Show preferences at Permissions section if any permission is missing
+        let permissions = permissionsService.snapshot()
+        let allGranted = permissions.screenRecording == .granted
+            && permissions.accessibility == .granted
+            && permissions.inputMonitoring == .granted
+        if !allGranted {
+            preferencesController?.showPermissions()
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -158,7 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshPermissionUI() {
         preferencesController?.refresh()
         statusController?.refresh()
-        startupPermissionsController?.refresh()
     }
 
     private func setupSnipEventTap() {
@@ -236,5 +237,3 @@ extension AppDelegate: PreferencesWindowControllerDelegate {
         refreshPermissionUI()
     }
 }
-
-extension AppDelegate: StartupPermissionsWindowControllerDelegate {}
