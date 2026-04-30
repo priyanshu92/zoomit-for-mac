@@ -17,6 +17,8 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 | Save Snip | `Ctrl+Shift+6` | Screenshot region and save to file via save dialog. |
 | OCR Snip | `Ctrl+Alt+6` | Extract text from a screen region to clipboard. |
 | DemoType | `Ctrl+7` | Simulated typing from clipboard (prefix text with `[start]`). |
+| Panorama | `Ctrl+8` | Select a region, scroll the page, then press `Esc` or `Ctrl+8` again to stitch the captures into one image and copy it to the clipboard. |
+| Save Panorama | `Ctrl+Shift+8` | Same as Panorama, but writes the stitched image to a PNG via save dialog. |
 
 ### Draw Mode Tools
 
@@ -46,6 +48,17 @@ Copy text to your clipboard with a `[start]` prefix, then press `Ctrl+7`:
 ```
 
 Press `Esc` to stop mid-typing. Press `Ctrl+7` again to restart.
+
+### Panorama
+
+Capture a tall page or wide spreadsheet as a single image:
+
+1. Press `Ctrl+8` and drag to select the region you want to capture (the visible content area, not the full page).
+2. The selection becomes a fixed border that stays on top while you scroll.
+3. Scroll the page (vertically or horizontally) at any speed; ZoomIt captures frames in the background.
+4. Press `Esc`, click **Finish Panorama**, or press `Ctrl+8` again to stop. Frames are stitched and copied to the clipboard.
+
+Use `Ctrl+Shift+8` instead to save the stitched image to a PNG file via the standard save dialog.
 
 ## Requirements
 
@@ -98,6 +111,8 @@ Sources/
     ├── RecordingController.swift          # Screen recording (GIF/MP4)
     ├── BreakTimerController.swift         # Break timer overlay
     ├── DemoTypeController.swift           # Simulated typing
+    ├── PanoramaController.swift           # Scrolling-region capture lifecycle
+    ├── PanoramaStitcher.swift             # Frame matching and stitching
     ├── StatusItemController.swift         # Menu bar icon and menu
     ├── PreferencesWindowController.swift  # Settings UI
     └── OverlayWindow.swift                # Custom window types
