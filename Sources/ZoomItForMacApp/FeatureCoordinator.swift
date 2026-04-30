@@ -13,6 +13,7 @@ final class FeatureCoordinator {
     private let drawOverlayController: DrawOverlayController
     private let recordingController: RecordingController
     private let snipController: SnipController
+    private let panoramaController: PanoramaController
 
     init(
         shortcutStore: ShortcutStore,
@@ -20,7 +21,8 @@ final class FeatureCoordinator {
         permissionsService: PermissionsService,
         screenCaptureService: ScreenCaptureService,
         clipboardService: ClipboardService,
-        ocrService: OCRService
+        ocrService: OCRService,
+        onPanoramaActivityChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.shortcutStore = shortcutStore
         self.settingsStore = settingsStore
@@ -45,6 +47,12 @@ final class FeatureCoordinator {
             clipboardService: clipboardService,
             ocrService: ocrService,
             settingsStore: settingsStore
+        )
+        self.panoramaController = PanoramaController(
+            screenCaptureService: screenCaptureService,
+            clipboardService: clipboardService,
+            settingsStore: settingsStore,
+            onActivityChanged: onPanoramaActivityChanged
         )
         self.drawOverlayController.onShortcutAction = { [weak self] action in
             self?.trigger(action)
@@ -159,6 +167,35 @@ final class FeatureCoordinator {
             return
         }
 
+        if action == .panorama || action == .savePanorama {
+            guard permissions.screenRecording == .granted else {
+                presentMissingPermissionAlert(for: action, permissions: permissions)
+                return
+            }
+
+            do {
+                try panoramaController.toggle(
+                    destination: action == .panorama ? .clipboard : .file
+                ) { [weak self] result in
+                    switch result {
+                    case let .success(captureResult):
+                        self?.presentClipboardResultAlert(title: captureResult.title, message: captureResult.message)
+                    case let .failure(error):
+                        if case PanoramaControllerError.selectionCancelled = error {
+                            return
+                        }
+                        self?.presentClipboardResultAlert(title: "Panorama failed", message: error.localizedDescription)
+                    }
+                }
+            } catch {
+                if case PanoramaControllerError.selectionCancelled = error {
+                    return
+                }
+                presentClipboardResultAlert(title: "Panorama failed", message: error.localizedDescription)
+            }
+            return
+        }
+
         if action == .ocrSnip {
             guard permissions.screenRecording == .granted else {
                 presentMissingPermissionAlert(for: action, permissions: permissions)
@@ -209,6 +246,11 @@ final class FeatureCoordinator {
         demoTypeController.dismiss()
         drawOverlayController.dismiss()
         recordingController.cancel()
+        panoramaController.cancel()
+    }
+
+    func stopPanoramaCapture() {
+        panoramaController.stopCapture()
     }
 
     func presentStartupError(_ error: Error) {

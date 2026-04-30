@@ -29,6 +29,8 @@ enum ValidationRunner {
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.demoType]?.windowsStyleDescription == "Ctrl+7", "DemoType shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.previousDemoType]?.windowsStyleDescription == "Ctrl+Shift+7", "Previous DemoType shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.ocrSnip]?.windowsStyleDescription == "Ctrl+Alt+6", "OCR snip shortcut mismatch")
+        try expect(ShortcutCatalog.windowsEquivalentDefaults[.panorama]?.windowsStyleDescription == "Ctrl+8", "Panorama shortcut mismatch")
+        try expect(ShortcutCatalog.windowsEquivalentDefaults[.savePanorama]?.windowsStyleDescription == "Ctrl+Shift+8", "Save Panorama shortcut mismatch")
     }
 
     private static func validateShortcutStoreFallbacks() throws {

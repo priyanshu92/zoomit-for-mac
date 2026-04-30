@@ -6,6 +6,8 @@ import PlatformServices
 // Static handler the CGEvent tap C callback can reach without capturing context.
 // Set once during app launch; called from the event tap when a snip hotkey is detected.
 nonisolated(unsafe) private var snipEventHandler: (@Sendable (ShortcutAction, CGImage?) -> Void)?
+nonisolated(unsafe) private var panoramaStopHandler: (@Sendable () -> Void)?
+nonisolated(unsafe) private var panoramaEventTapIsActive = false
 
 // Reference to event tap for re-enabling on timeout
 nonisolated(unsafe) private var globalEventTap: CFMachPort?
@@ -42,6 +44,12 @@ private func snipEventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
+    if keyCode == 53, panoramaEventTapIsActive {
+        suppressedKeyCodes.insert(keyCode)
+        panoramaStopHandler?()
+        return nil
+    }
+
     let flags = event.flags
 
     // Must have Control, must not have Command
@@ -61,6 +69,9 @@ private func snipEventTapCallback(
     case (22, false, false): action = .snip; needsScreenCapture = true
     case (22, true, false):  action = .saveSnip; needsScreenCapture = true
     case (22, false, true):  action = .ocrSnip; needsScreenCapture = true
+    // keyCode 28 = "8" key — panorama
+    case (28, false, false): action = .panorama; needsScreenCapture = false
+    case (28, true, false):  action = .savePanorama; needsScreenCapture = false
     default: return Unmanaged.passUnretained(event)
     }
 
@@ -102,12 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionsService: permissionsService,
         screenCaptureService: screenCaptureService,
         clipboardService: clipboardService,
-        ocrService: ocrService
+        ocrService: ocrService,
+        onPanoramaActivityChanged: { [weak self] isActive in
+            panoramaEventTapIsActive = isActive
+            self?.statusController?.setPanoramaActive(isActive)
+        }
     )
 
     private var snipEventTap: CFMachPort?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        zoomItDebugLog("applicationDidFinishLaunching")
         // Install CGEvent tap for snip actions — intercepts keys before menu tracking
         setupSnipEventTap()
 
@@ -117,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKeys.handler = { [weak self] action in
                 // Skip actions handled by the CGEvent tap to avoid double-firing
                 if tapIsActive {
-                    let eventTapActions: Set<ShortcutAction> = [.draw, .snip, .saveSnip, .ocrSnip]
+                    let eventTapActions: Set<ShortcutAction> = [.draw, .snip, .saveSnip, .ocrSnip, .panorama, .savePanorama]
                     guard !eventTapActions.contains(action) else { return }
                 }
                 DispatchQueue.main.async {
@@ -126,7 +142,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try hotKeys.registerBindings(shortcutStore.allBindings())
             hotKeyCenter = hotKeys
+            zoomItDebugLog("Registered global hotkeys")
         } catch {
+            zoomItDebugLog("Hotkey registration failed: \(error.localizedDescription)")
             featureCoordinator.presentStartupError(error)
         }
 
@@ -142,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             permissionsService: permissionsService,
             delegate: self
         )
+        zoomItDebugLog("Status item controller initialized")
 
         // Show preferences at Permissions section if any permission is missing
         let permissions = permissionsService.snapshot()
@@ -149,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             && permissions.accessibility == .granted
             && permissions.inputMonitoring == .granted
         if !allGranted {
+            zoomItDebugLog("Missing permissions; showing preferences")
             preferencesController?.showPermissions()
         }
     }
@@ -169,6 +189,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.featureCoordinator.trigger(action, preCapturedImage: image)
             }
         }
+        panoramaStopHandler = { [weak self] in
+            DispatchQueue.main.async {
+                self?.featureCoordinator.stopPanoramaCapture()
+            }
+        }
 
         let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.tapDisabledByTimeout.rawValue)
@@ -181,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             callback: snipEventTapCallback,
             userInfo: nil
         ) else {
+            zoomItDebugLog("CGEvent tap creation failed")
             return
         }
 
@@ -189,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         snipEventTap = tap
+        zoomItDebugLog("CGEvent tap enabled")
     }
 }
 

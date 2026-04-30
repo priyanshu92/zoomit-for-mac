@@ -35,6 +35,9 @@ final class StatusItemController: NSObject {
             button.imagePosition = .imageOnly
             button.title = ""
             button.toolTip = "ZoomIt"
+            zoomItDebugLog("Status item button created; image=\(button.image == nil ? "nil" : "set")")
+        } else {
+            zoomItDebugLog("Status item button is nil")
         }
 
         refresh()
@@ -98,6 +101,11 @@ final class StatusItemController: NSObject {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+    }
+
+    func setPanoramaActive(_ isActive: Bool) {
+        guard let button = statusItem.button else { return }
+        button.toolTip = isActive ? "ZoomIt Panorama is recording. Press Esc or Ctrl+8 to finish." : "ZoomIt"
     }
 
     private var isLaunchAtStartupEnabled: Bool {
