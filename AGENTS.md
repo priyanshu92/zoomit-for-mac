@@ -70,5 +70,17 @@ ditto -c -k --sequesterRsrc --keepParent "ZoomIt for Mac.app" "ZoomIt-for-Mac-X.
 gh release upload vX.Y.Z "ZoomIt-for-Mac-X.Y.Z.app.zip"
 ```
 
-Release-notes **Install** section should tell users to: download the zip → double-click in Finder to unzip (preserves bundle layout) → drag to `/Applications` → right-click → **Open** the first time, since the bundle is only ad-hoc signed (not Developer ID + notarized). Clean up the worktree (`git worktree remove --force …`) and the staging dir when done.
+Release-notes **Install** section must walk users through the Gatekeeper bypass — the bundle is only ad-hoc signed (not Developer ID + notarized), and on macOS 15+ the old right-click → **Open** trick no longer works. Instead, instruct users to:
+
+1. Download the zip and double-click it in Finder to unzip (preserves the bundle layout — third-party unarchivers can corrupt it).
+2. Drag `ZoomIt for Mac.app` into `/Applications`.
+3. Try to launch it once — macOS shows *"Apple could not verify … is free of malware"*. Click **Done** (not *Move to Bin*).
+4. Open **System Settings → Privacy & Security**, scroll to the **Security** section, and click **Open Anyway** next to the ZoomIt entry; authenticate, then launch the app again.
+5. Power-user fallback (skips the dialog dance) — strip the quarantine xattr from a terminal:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/ZoomIt for Mac.app"
+   open "/Applications/ZoomIt for Mac.app"
+   ```
+
+Then mention the usual first-launch permission prompts (Accessibility, Screen Recording, Input Monitoring). Clean up the worktree (`git worktree remove --force …`) and the staging dir when done.
 
