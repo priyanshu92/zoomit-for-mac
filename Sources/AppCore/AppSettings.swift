@@ -1,20 +1,10 @@
 import CoreGraphics
 import Foundation
 
-public enum RecordingFormat: String, CaseIterable, Codable, Sendable {
-    case gif
-    case mp4
-
-    public var title: String {
-        rawValue.uppercased()
-    }
-}
-
 public struct AppSettings: Codable, Equatable, Sendable {
     public var initialZoomFactor: Double
     public var breakDurationMinutes: Int
     public var breakOpacity: Double
-    public var recordingFormat: RecordingFormat
     public var recordingFramesPerSecond: Double
     public var recordingScale: Double
     public var recordingSaveLocation: String
@@ -27,7 +17,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         initialZoomFactor: Double,
         breakDurationMinutes: Int,
         breakOpacity: Double,
-        recordingFormat: RecordingFormat,
         recordingFramesPerSecond: Double,
         recordingScale: Double,
         recordingSaveLocation: String,
@@ -39,7 +28,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.initialZoomFactor = initialZoomFactor
         self.breakDurationMinutes = breakDurationMinutes
         self.breakOpacity = breakOpacity
-        self.recordingFormat = recordingFormat
         self.recordingFramesPerSecond = recordingFramesPerSecond
         self.recordingScale = recordingScale
         self.recordingSaveLocation = recordingSaveLocation
@@ -55,7 +43,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
             initialZoomFactor: 2.0,
             breakDurationMinutes: 10,
             breakOpacity: 0.84,
-            recordingFormat: .mp4,
             recordingFramesPerSecond: 6,
             recordingScale: 1.0,
             recordingSaveLocation: desktopPath,

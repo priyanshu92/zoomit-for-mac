@@ -6,6 +6,83 @@ import ImageIO
 import PlatformServices
 import UniformTypeIdentifiers
 
+private enum RecordingFormat {
+    case gif
+    case mp4
+
+    var title: String {
+        switch self {
+        case .gif: return "GIF"
+        case .mp4: return "MP4"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .gif: return "gif"
+        case .mp4: return "mp4"
+        }
+    }
+
+    var contentType: UTType {
+        switch self {
+        case .gif: return .gif
+        case .mp4: return .mpeg4Movie
+        }
+    }
+}
+
+private struct RecordingSaveSelection {
+    let url: URL
+    let format: RecordingFormat
+}
+
+@MainActor
+private final class RecordingFormatAccessory: NSObject {
+    private weak var panel: NSSavePanel?
+    private let popup = NSPopUpButton()
+    private let formats: [RecordingFormat] = [.mp4, .gif]
+    let view: NSView
+
+    init(panel: NSSavePanel, initialFormat: RecordingFormat) {
+        self.panel = panel
+
+        let label = NSTextField(labelWithString: "Format:")
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        popup.translatesAutoresizingMaskIntoConstraints = false
+        popup.addItems(withTitles: formats.map(\.title))
+        if let initialIndex = formats.firstIndex(of: initialFormat) {
+            popup.selectItem(at: initialIndex)
+        }
+
+        let stack = NSStackView(views: [label, popup])
+        stack.orientation = .horizontal
+        stack.alignment = .firstBaseline
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 12, right: 16)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        self.view = stack
+
+        super.init()
+
+        popup.target = self
+        popup.action = #selector(formatChanged)
+    }
+
+    var selectedFormat: RecordingFormat {
+        formats[popup.indexOfSelectedItem]
+    }
+
+    @objc private func formatChanged() {
+        guard let panel else { return }
+        let format = selectedFormat
+        panel.allowedContentTypes = [format.contentType]
+        let currentName = (panel.nameFieldStringValue as NSString).deletingPathExtension
+        panel.nameFieldStringValue = "\(currentName).\(format.fileExtension)"
+    }
+}
+
 @MainActor
 struct RecordingToggleResult {
     let title: String
@@ -126,10 +203,9 @@ final class RecordingController {
     }
 
     private func startedResult(for mode: RecordingMode) -> RecordingToggleResult {
-        let settings = settingsStore.load()
         return RecordingToggleResult(
             title: "Recording armed",
-            message: "Starting \(mode.label) \(settings.recordingFormat.title) recording after a 3-second countdown.",
+            message: "Starting \(mode.label) recording after a 3-second countdown.",
             shouldPresentAlert: false
         )
     }
@@ -177,7 +253,7 @@ final class RecordingController {
         hideRecordingHighlight()
 
         let settings = settingsStore.load()
-        guard let destinationURL = try promptForDestinationURL(for: settings.recordingFormat) else {
+        guard let selection = try promptForDestination() else {
             return RecordingToggleResult(
                 title: "Recording discarded",
                 message: "Recording stopped without saving.",
@@ -186,14 +262,14 @@ final class RecordingController {
         }
 
         let savedURL: URL
-        switch settings.recordingFormat {
+        switch selection.format {
         case .gif:
-            guard let url = writeGIF(to: destinationURL, settings: settings) else {
+            guard let url = writeGIF(to: selection.url, settings: settings) else {
                 throw RecordingControllerError.exportFailed
             }
             savedURL = url
         case .mp4:
-            guard let url = try writeMP4(to: destinationURL, settings: settings) else {
+            guard let url = try writeMP4(to: selection.url, settings: settings) else {
                 throw RecordingControllerError.exportFailed
             }
             savedURL = url
@@ -206,7 +282,7 @@ final class RecordingController {
 
         return RecordingToggleResult(
             title: "Recording saved",
-            message: "Saved \(completedMode.label) \(settings.recordingFormat.title) recording (\(capturedFrames.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path)",
+            message: "Saved \(completedMode.label) \(selection.format.title) recording (\(capturedFrames.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path)",
             shouldPresentAlert: true
         )
     }
@@ -512,11 +588,10 @@ final class RecordingController {
         return pixelBuffer
     }
 
-    private func makeSuggestedDestinationURL(for format: RecordingFormat) throws -> URL {
+    private func makeSuggestedDestinationURL() throws -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let extensionName = format == .gif ? "gif" : "mp4"
-        let fileName = "ZoomItRecording-\(formatter.string(from: Date())).\(extensionName)"
+        let fileName = "ZoomItRecording-\(formatter.string(from: Date())).mp4"
         let directory = URL(fileURLWithPath: settingsStore.load().recordingSaveLocation, isDirectory: true)
 
         do {
@@ -528,17 +603,25 @@ final class RecordingController {
         return directory.appendingPathComponent(fileName)
     }
 
-    private func promptForDestinationURL(for format: RecordingFormat) throws -> URL? {
-        let suggestedURL = try makeSuggestedDestinationURL(for: format)
+    private func promptForDestination() throws -> RecordingSaveSelection? {
+        let suggestedURL = try makeSuggestedDestinationURL()
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = suggestedURL.lastPathComponent
         panel.directoryURL = suggestedURL.deletingLastPathComponent()
-        panel.allowedContentTypes = [format == .gif ? .gif : .mpeg4Movie]
+        panel.allowedContentTypes = [.mpeg4Movie]
         panel.isExtensionHidden = false
         panel.title = "Save Recording"
-        panel.message = "Choose where to save the recording."
-        return panel.runModal() == .OK ? panel.url : nil
+        panel.message = "Choose a file format and where to save the recording."
+
+        let accessory = RecordingFormatAccessory(panel: panel, initialFormat: .mp4)
+        panel.accessoryView = accessory.view
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return nil
+        }
+        return RecordingSaveSelection(url: url, format: accessory.selectedFormat)
     }
 
     private func runCountdown(on screenFrame: CGRect, highlighting highlightedRegion: CGRect?) throws {
@@ -619,10 +702,16 @@ final class RecordingController {
             return nil
         }
 
-        let borderInset: CGFloat = 2
+        let lineWidth: CGFloat = 3
+        // Inflate the recording-highlight window by `lineWidth + 1` so the red
+        // stroke sits entirely in the outer ring (between the window edge and
+        // the recorded region) with a 1px gap for sub-pixel rounding from
+        // `.integral`. Without this gap the stroke is captured by the screen
+        // recorder and bleeds into the saved GIF/MP4.
+        let highlightInset: CGFloat = lineWidth + 1
         let windowFrame = dimBackground
             ? screenFrame
-            : highlightedRegion.insetBy(dx: -borderInset, dy: -borderInset).integral
+            : highlightedRegion.insetBy(dx: -highlightInset, dy: -highlightInset).integral
 
         let window = OverlayPanel(
             contentRect: windowFrame,
@@ -645,11 +734,12 @@ final class RecordingController {
                 width: highlightedRegion.width,
                 height: highlightedRegion.height
             ).integral
-            : CGRect(origin: .zero, size: windowFrame.size).insetBy(dx: borderInset, dy: borderInset)
+            : CGRect(origin: .zero, size: windowFrame.size).insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
 
         window.contentView = RecordingRegionHighlightView(
             frame: CGRect(origin: .zero, size: windowFrame.size),
             highlightedRegion: localHighlightedRegion,
+            lineWidth: lineWidth,
             dimBackground: dimBackground
         )
         return window
@@ -713,10 +803,12 @@ private extension CGRect {
 @MainActor
 private final class RecordingRegionHighlightView: NSView {
     private let highlightedRegion: CGRect
+    private let strokeLineWidth: CGFloat
     private let dimBackground: Bool
 
-    init(frame frameRect: NSRect, highlightedRegion: CGRect, dimBackground: Bool) {
+    init(frame frameRect: NSRect, highlightedRegion: CGRect, lineWidth: CGFloat, dimBackground: Bool) {
         self.highlightedRegion = highlightedRegion
+        self.strokeLineWidth = lineWidth
         self.dimBackground = dimBackground
         super.init(frame: frameRect)
         wantsLayer = true
@@ -740,7 +832,7 @@ private final class RecordingRegionHighlightView: NSView {
 
         let strokePath = NSBezierPath(rect: highlightedRegion)
         NSColor.systemRed.setStroke()
-        strokePath.lineWidth = 3
+        strokePath.lineWidth = strokeLineWidth
         strokePath.stroke()
     }
 }

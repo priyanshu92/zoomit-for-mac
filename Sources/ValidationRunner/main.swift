@@ -74,13 +74,13 @@ enum ValidationRunner {
 
         let store = UserDefaultsAppSettingsStore(userDefaults: defaults)
         var settings = store.load()
-        settings.recordingFormat = .gif
+        settings.recordingScale = 1.5
         settings.breakDurationMinutes = 15
         settings.initialZoomFactor = 2.5
         try store.save(settings)
 
         let reloaded = store.load()
-        try expect(reloaded.recordingFormat == .gif, "Recording format did not persist")
+        try expect(reloaded.recordingScale == 1.5, "Recording scale did not persist")
         try expect(reloaded.breakDurationMinutes == 15, "Break duration did not persist")
         try expect(reloaded.initialZoomFactor == 2.5, "Zoom factor did not persist")
     }
@@ -108,7 +108,6 @@ enum ValidationRunner {
             initialZoomFactor: 2,
             breakDurationMinutes: 10,
             breakOpacity: 0.84,
-            recordingFormat: .mp4,
             recordingFramesPerSecond: 120,
             recordingScale: 10,
             recordingSaveLocation: "Recordings",
@@ -128,7 +127,6 @@ enum ValidationRunner {
             initialZoomFactor: 2,
             breakDurationMinutes: 10,
             breakOpacity: 0.84,
-            recordingFormat: .mp4,
             recordingFramesPerSecond: 6,
             recordingScale: 1,
             recordingSaveLocation: "Recordings",

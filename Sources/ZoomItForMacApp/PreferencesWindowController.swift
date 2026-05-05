@@ -47,7 +47,6 @@ final class PreferencesWindowController: NSWindowController {
     private var currentWidthConstraint: NSLayoutConstraint?
 
     // Persistent form controls (built once, never recreated)
-    private let recordingFormatPopup = NSPopUpButton()
     private let zoomFactorField = NSTextField()
     private let breakDurationField = NSTextField()
     private let annotationFontSizeField = NSTextField()
@@ -113,9 +112,6 @@ final class PreferencesWindowController: NSWindowController {
         let settings = settingsStore.load()
         let bindings = shortcutStore.allBindings()
 
-        recordingFormatPopup.removeAllItems()
-        recordingFormatPopup.addItems(withTitles: RecordingFormat.allCases.map(\.title))
-        recordingFormatPopup.selectItem(withTitle: settings.recordingFormat.title)
         zoomFactorField.stringValue = String(format: "%.2f", settings.initialZoomFactor)
         breakDurationField.stringValue = "\(settings.breakDurationMinutes)"
         annotationFontSizeField.stringValue = String(format: "%.0f", settings.annotationFontSize)
@@ -358,13 +354,6 @@ final class PreferencesWindowController: NSWindowController {
         let stack = makeSectionStack(in: container)
 
         addFullWidth(makeSectionTitle("Recording"), to: stack)
-
-        addFullWidth(makeGroupCard(
-            header: "FORMAT",
-            rows: [
-                makeSettingsRow(label: "Recording format", control: recordingFormatPopup),
-            ]
-        ), to: stack)
 
         addFullWidth(makeGroupCard(
             header: "SAVE LOCATIONS",
@@ -771,12 +760,6 @@ final class PreferencesWindowController: NSWindowController {
 
     private func parsedSettings(from base: AppSettings) throws -> AppSettings {
         var settings = base
-        guard let selectedTitle = recordingFormatPopup.titleOfSelectedItem?.lowercased(),
-              let recordingFormat = RecordingFormat(rawValue: selectedTitle) else {
-            throw PreferencesValidationError.invalidField("Recording format", reason: "Choose a supported format.")
-        }
-
-        settings.recordingFormat = recordingFormat
         settings.initialZoomFactor = try parseDouble(
             zoomFactorField.stringValue,
             fieldName: "Initial zoom factor",
