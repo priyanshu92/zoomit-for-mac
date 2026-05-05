@@ -2,6 +2,12 @@
 
 A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.microsoft.com/en-us/sysinternals/downloads/zoomit) functionality to Mac. Built with Swift and AppKit.
 
+## Demo
+
+<video src="https://github.com/priyanshu92/zoomit-for-mac/raw/main/docs/demo.mp4" controls width="720"></video>
+
+> If the player doesn't load, [download or watch the demo here](docs/demo.mp4).
+
 ## Features
 
 | Feature | Shortcut | Description |
