@@ -4,9 +4,7 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 
 ## Demo
 
-<video src="https://github.com/priyanshu92/zoomit-for-mac/raw/main/docs/demo.mp4" controls width="720"></video>
-
-> If the player doesn't load, [download or watch the demo here](docs/demo.mp4).
+![ZoomIt for Mac demo](docs/demo.gif)
 
 ## Features
 
