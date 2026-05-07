@@ -12,6 +12,8 @@ enum ValidationRunner {
         try validateAppSettingsReset()
         try validateDerivedAppSettings()
         try validateCaptureGeometry()
+        try validateRecordingFrameRange()
+        try validateRecordingTrimSession()
         print("ValidationRunner: all checks passed")
     }
 
@@ -144,6 +146,107 @@ enum ValidationRunner {
         let cropRect = CaptureGeometry.cropRect(for: selection, within: screenFrame, scaleFactor: 2)
 
         try expect(cropRect == CGRect(x: 300, y: 1160, width: 400, height: 240), "Crop rect should convert to pixel coordinates")
+    }
+
+    private static func validateRecordingFrameRange() throws {
+        guard let fullRange = RecordingFrameRange.full(frameCount: 12) else {
+            throw ValidationError("Full recording frame range should be valid")
+        }
+
+        try expect(fullRange.startIndex == 0, "Full frame range should start at zero")
+        try expect(fullRange.endIndexExclusive == 12, "Full frame range should end after the last frame")
+        try expect(fullRange.count == 12, "Full frame range should expose frame count")
+        try expect(Array(fullRange.indices) == Array(0..<12), "Full frame range should expose export indices")
+
+        guard let trimmedRange = RecordingFrameRange(startIndex: 2, endIndexExclusive: 8, frameCount: 10) else {
+            throw ValidationError("Trimmed recording frame range should be valid")
+        }
+
+        try expect(trimmedRange.count == 6, "Trimmed frame range should expose selected frame count")
+        try expect(trimmedRange.startTime(atFramesPerSecond: 2) == 1, "Trimmed frame range start time mismatch")
+        try expect(trimmedRange.endTime(atFramesPerSecond: 2) == 4, "Trimmed frame range end time mismatch")
+        try expect(trimmedRange.duration(atFramesPerSecond: 2) == 3, "Trimmed frame range duration mismatch")
+        try expect(trimmedRange.formattedTimeRange(atFramesPerSecond: 2) == "1.0s-4.0s", "Trimmed frame range formatted bounds mismatch")
+        try expect(trimmedRange.formattedDuration(atFramesPerSecond: 2) == "3.0s", "Trimmed frame range formatted duration mismatch")
+
+        try expect(RecordingFrameRange(startIndex: 0, endIndexExclusive: 0, frameCount: 10) == nil, "Empty frame range should be rejected")
+        try expect(RecordingFrameRange(startIndex: -1, endIndexExclusive: 3, frameCount: 10) == nil, "Negative frame range should be rejected")
+        try expect(RecordingFrameRange(startIndex: 4, endIndexExclusive: 11, frameCount: 10) == nil, "Out-of-bounds frame range should be rejected")
+        try expect(RecordingFrameRange.full(frameCount: 0) == nil, "Empty recording should not produce a full frame range")
+        try expect(trimmedRange.duration(atFramesPerSecond: 0) == 0, "Invalid FPS should produce zero duration")
+    }
+
+    private static func validateRecordingTrimSession() throws {
+        guard var session = RecordingTrimSession(totalFrameCount: 10, framesPerSecond: 2) else {
+            throw ValidationError("Recording trim session should initialize for non-empty recordings")
+        }
+
+        try expect(session.totalFrameCount == 10, "Trim session should expose total frame count")
+        try expect(session.framesPerSecond == 2, "Trim session should expose FPS")
+        try expect(session.selectedRange == RecordingFrameRange.full(frameCount: 10), "Trim session should default to full frame range")
+        try expect(session.selectedStartFrameIndex == 0, "Default trim range should start at the first frame")
+        try expect(session.selectedEndFrameIndex == 9, "Default trim range should end at the last frame")
+        try expect(session.playheadFrameIndex == 0, "Default playhead should start at the first selected frame")
+        try expect(session.totalDuration == 5, "Trim session total duration mismatch")
+        try expect(session.formattedTotalDuration == "5.0s", "Trim session formatted total duration mismatch")
+        try expect(session.formattedSelectedTimeRange == "0.0s-5.0s", "Default trim time range mismatch")
+
+        session.setStartFrame(12)
+        try expect(session.selectedRange == RecordingFrameRange(startIndex: 9, endIndexExclusive: 10, frameCount: 10), "Start handle should clamp before the selected end")
+        try expect(session.playheadFrameIndex == 9, "Playhead should clamp into the selected range after moving start")
+
+        session.setEndFrame(-4)
+        try expect(session.selectedRange == RecordingFrameRange(startIndex: 9, endIndexExclusive: 10, frameCount: 10), "End handle should clamp after the selected start")
+
+        session.resetToDefaultRange()
+        try expect(session.selectedRange == RecordingFrameRange.full(frameCount: 10), "Reset should restore the full recording range")
+        try expect(session.playheadFrameIndex == 0, "Reset should move the playhead to the selection start")
+
+        session.setEndFrame(4)
+        session.setPlayheadFrame(9)
+        try expect(session.selectedRange == RecordingFrameRange(startIndex: 0, endIndexExclusive: 5, frameCount: 10), "End handle should use an inclusive frame index")
+        try expect(session.playheadFrameIndex == 4, "Playhead should clamp to the selected end")
+
+        session.setPlayheadFrame(-2)
+        try expect(session.playheadFrameIndex == 0, "Playhead should clamp to the selected start")
+
+        session.setStartFrame(3)
+        try expect(session.selectedRange == RecordingFrameRange(startIndex: 3, endIndexExclusive: 5, frameCount: 10), "Start handle should preserve the current selected end")
+        try expect(session.playheadFrameIndex == 3, "Playhead should clamp to the new selected start")
+        try expect(session.selectedFrameCount == 2, "Selected frame count mismatch")
+        try expect(session.selectedDuration == 1, "Selected duration mismatch")
+        try expect(session.selectedRelativeFrameIndex(forFrame: 99) == 1, "Relative frame conversion should clamp to selection")
+        try expect(session.absoluteFrameIndex(forSelectedRelativeFrame: -8) == 3, "Negative relative frame should clamp to selection start")
+        try expect(session.absoluteFrameIndex(forSelectedRelativeFrame: 8) == 4, "Large relative frame should clamp to selection end")
+        try expect(session.selectedRelativeTime(forFrame: 4) == 0.5, "Selected relative time mismatch")
+        try expect(session.frameIndex(atSelectedRelativeTime: 0.5) == 4, "Relative time should convert back to an absolute frame")
+        try expect(session.frameIndex(atSelectedProgress: 1.5) == 4, "Selected progress should clamp to the selected end")
+        try expect(session.frameIndex(atSelectedProgress: -1) == 3, "Selected progress should clamp to the selected start")
+        try expect(session.selectedRelativeProgress(forFrame: 4) == 1, "Selected relative progress mismatch")
+        try expect(session.frameIndex(atTime: 100) == 9, "Absolute time should clamp to recording end")
+
+        session.setSelectedFrameRange(startFrameIndex: 8, endFrameIndex: 3)
+        try expect(session.selectedRange == RecordingFrameRange(startIndex: 3, endIndexExclusive: 9, frameCount: 10), "Frame range setter should normalize reversed handles")
+
+        guard let trimmedRange = RecordingFrameRange(startIndex: 2, endIndexExclusive: 6, frameCount: 6),
+              let initializedTrimmedSession = RecordingTrimSession(
+                totalFrameCount: 6,
+                framesPerSecond: 4,
+                selectedRange: trimmedRange,
+                playheadFrameIndex: 99
+              )
+        else {
+            throw ValidationError("Trim session should accept an initial selected range")
+        }
+
+        try expect(initializedTrimmedSession.selectedRange == trimmedRange, "Initial trim range mismatch")
+        try expect(initializedTrimmedSession.playheadFrameIndex == 5, "Initial playhead should clamp to the selected range")
+        try expect(initializedTrimmedSession.formattedSelectedDuration == "1.0s", "Initial selected duration formatting mismatch")
+
+        let outOfBoundsRange = RecordingFrameRange(startIndex: 0, endIndexExclusive: 6, frameCount: 6)
+        try expect(RecordingTrimSession(totalFrameCount: 5, framesPerSecond: 2, selectedRange: outOfBoundsRange) == nil, "Initial trim range should not exceed total frames")
+        try expect(RecordingTrimSession(totalFrameCount: 0, framesPerSecond: 2) == nil, "Empty recording should not create a trim session")
+        try expect(RecordingTrimSession(totalFrameCount: 10, framesPerSecond: 0) == nil, "Invalid FPS should not create a trim session")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

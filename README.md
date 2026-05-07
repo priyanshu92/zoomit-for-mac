@@ -15,8 +15,9 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 | Break Timer | `Ctrl+3` | Full-screen countdown timer. |
 | Live Zoom | `Ctrl+4` | Real-time magnification. Click-through — use your system normally while zoomed. |
 | Live Draw | `Ctrl+Shift+4` | Live zoom, then click to freeze and draw. |
-| Record | `Ctrl+5` | Full-screen recording with 3-second countdown and save dialog. |
-| Crop Record | `Ctrl+Shift+5` | Record a selected region with visible border frame. |
+| Record | `Ctrl+5` | Full-display recording with 3-second countdown, trim window, and MP4/GIF save options. |
+| Crop Record | `Ctrl+Shift+5` | Record a selected region with visible border frame, then trim before saving. |
+| Window Record | `Ctrl+Alt+5` | Record the hovered window, then trim before saving. |
 | Snip | `Ctrl+6` | Screenshot region to clipboard. Preserves open menus. |
 | Save Snip | `Ctrl+Shift+6` | Screenshot region and save to file via save dialog. |
 | OCR Snip | `Ctrl+Alt+6` | Extract text from a screen region to clipboard. |
@@ -63,6 +64,10 @@ Capture a tall page or wide spreadsheet as a single image:
 4. Press `Esc`, click **Finish Panorama**, or press `Ctrl+8` again to stop. Frames are stitched and copied to the clipboard.
 
 Use `Ctrl+Shift+8` instead to save the stitched image to a PNG file via the standard save dialog.
+
+### Recording
+
+Press `Ctrl+5` to record the full display, `Ctrl+Shift+5` to record a selected region, or `Ctrl+Alt+5` to record the window under the cursor. Press the same shortcut again to stop; ZoomIt opens a trim window where you can trim the start or end, save the selected range as MP4 or GIF, or cancel and discard the recording.
 
 ## Requirements
 

@@ -94,6 +94,7 @@ enum RecordingControllerError: LocalizedError {
     case captureUnavailable
     case noFramesCaptured
     case exportFailed
+    case invalidFrameSelection
     case invalidDestination(String)
     case selectionCancelled
     case hoveredWindowUnavailable
@@ -106,6 +107,8 @@ enum RecordingControllerError: LocalizedError {
             return "No frames were captured before recording stopped."
         case .exportFailed:
             return "Recording export could not be finalized."
+        case .invalidFrameSelection:
+            return "The trim selection is empty or outside the captured recording."
         case let .invalidDestination(path):
             return "The recording could not be saved to \(path)."
         case .selectionCancelled:
@@ -253,6 +256,22 @@ final class RecordingController {
         hideRecordingHighlight()
 
         let settings = settingsStore.load()
+        let trimResult = try promptForTrimRange(settings: settings, mode: completedMode)
+        let exportFrameRange: RecordingFrameRange
+        switch trimResult {
+        case .cancel:
+            return RecordingToggleResult(
+                title: "Recording discarded",
+                message: "Recording stopped without saving.",
+                shouldPresentAlert: false
+            )
+        case let .save(selectedRange):
+            guard let validFrameRange = validatedExportFrameRange(selectedRange) else {
+                throw RecordingControllerError.invalidFrameSelection
+            }
+            exportFrameRange = validFrameRange
+        }
+
         guard let selection = try promptForDestination() else {
             return RecordingToggleResult(
                 title: "Recording discarded",
@@ -264,26 +283,46 @@ final class RecordingController {
         let savedURL: URL
         switch selection.format {
         case .gif:
-            guard let url = writeGIF(to: selection.url, settings: settings) else {
+            guard let url = writeGIF(to: selection.url, settings: settings, frameRange: exportFrameRange) else {
                 throw RecordingControllerError.exportFailed
             }
             savedURL = url
         case .mp4:
-            guard let url = try writeMP4(to: selection.url, settings: settings) else {
+            guard let url = try writeMP4(to: selection.url, settings: settings, frameRange: exportFrameRange) else {
                 throw RecordingControllerError.exportFailed
             }
             savedURL = url
         }
 
-        let duration = max(recordingStartedAt?.timeIntervalSinceNow.magnitude ?? 0, Double(capturedFrames.count) / settings.validatedRecordingFramesPerSecond)
+        let duration = exportFrameRange.duration(atFramesPerSecond: settings.validatedRecordingFramesPerSecond)
         let fileSize = (try? savedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
 
         return RecordingToggleResult(
             title: "Recording saved",
-            message: "Saved \(completedMode.label) \(selection.format.title) recording (\(capturedFrames.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path)",
+            message: "Saved \(completedMode.label) \(selection.format.title) recording (\(exportFrameRange.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path)",
             shouldPresentAlert: true
+        )
+    }
+
+    private func promptForTrimRange(settings: AppSettings, mode: RecordingMode) throws -> RecordingTrimResult {
+        guard let trimController = RecordingTrimWindowController(
+            capturedFrames: capturedFrames,
+            settings: settings,
+            modeLabel: mode.label
+        ) else {
+            throw RecordingControllerError.invalidFrameSelection
+        }
+
+        return trimController.runModal()
+    }
+
+    private func validatedExportFrameRange(_ selectedRange: RecordingFrameRange) -> RecordingFrameRange? {
+        RecordingFrameRange(
+            startIndex: selectedRange.startIndex,
+            endIndexExclusive: selectedRange.endIndexExclusive,
+            frameCount: capturedFrames.count
         )
     }
 
@@ -404,11 +443,15 @@ final class RecordingController {
         return CGRect(origin: position, size: size)
     }
 
-    private func writeGIF(to destinationURL: URL, settings: AppSettings) -> URL? {
+    private func writeGIF(to destinationURL: URL, settings: AppSettings, frameRange: RecordingFrameRange) -> URL? {
+        guard frameRange.endIndexExclusive <= capturedFrames.count else {
+            return nil
+        }
+
         guard let destination = CGImageDestinationCreateWithURL(
             destinationURL as CFURL,
             UTType.gif.identifier as CFString,
-            capturedFrames.count,
+            frameRange.count,
             nil
         ) else {
             return nil
@@ -427,7 +470,7 @@ final class RecordingController {
         ] as CFDictionary
 
         CGImageDestinationSetProperties(destination, gifProperties)
-        for frame in capturedFrames {
+        for frame in capturedFrames[frameRange.indices] {
             CGImageDestinationAddImage(destination, scaled(frame: frame, scale: settings.validatedRecordingScale), frameProperties)
         }
 
@@ -438,8 +481,13 @@ final class RecordingController {
         return destinationURL
     }
 
-    private func writeMP4(to destinationURL: URL, settings: AppSettings) throws -> URL? {
-        guard let firstFrame = capturedFrames.first else {
+    private func writeMP4(to destinationURL: URL, settings: AppSettings, frameRange: RecordingFrameRange) throws -> URL? {
+        guard frameRange.endIndexExclusive <= capturedFrames.count else {
+            return nil
+        }
+
+        let firstFrame = capturedFrames[frameRange.startIndex]
+        guard !frameRange.indices.isEmpty else {
             return nil
         }
 
@@ -480,7 +528,7 @@ final class RecordingController {
         let frameDuration = CMTime(seconds: 1.0 / fps, preferredTimescale: 600)
         var presentationTime = CMTime.zero
 
-        for frame in capturedFrames {
+        for frame in capturedFrames[frameRange.indices] {
             let scaledFrame = scaled(frame: frame, scale: settings.validatedRecordingScale)
             guard let pixelBuffer = makePixelBuffer(from: scaledFrame, canvasSize: CGSize(width: width, height: height)) else {
                 continue
