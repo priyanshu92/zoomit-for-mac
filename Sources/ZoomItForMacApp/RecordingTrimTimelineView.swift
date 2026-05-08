@@ -1,5 +1,6 @@
 import AppCore
 import AppKit
+import CoreGraphics
 
 @MainActor
 final class RecordingTrimTimelineView: NSView {
@@ -19,26 +20,34 @@ final class RecordingTrimTimelineView: NSView {
     }
 
     private struct TimelineColors {
-        let track: NSColor
-        let mutedRegion: NSColor
-        let selectedRegion: NSColor
+        let dim: NSColor
+        let selectedBorder: NSColor
         let handleFill: NSColor
-        let handleStroke: NSColor
+        let handleNotch: NSColor
         let playhead: NSColor
+        let playheadShadow: NSColor
         let tick: NSColor
         let primaryText: NSColor
         let secondaryText: NSColor
+        let stripFallback: NSColor
     }
 
+    private let frames: [CGImage]
     private let horizontalInset: CGFloat = 28
-    private let trackHeight: CGFloat = 12
-    private let handleSize = NSSize(width: 12, height: 36)
+    private let filmstripHeight: CGFloat = 44
+    private let filmstripCornerRadius: CGFloat = 4
+    private let handleSize = NSSize(width: 14, height: 60)
     private let handleHitOutset: CGFloat = 8
     private let playheadHitWidth: CGFloat = 14
     private let minimumDrawnSelectionWidth: CGFloat = 6
-    private var activeDragTarget: DragTarget?
+    private let selectionBorderWidth: CGFloat = 2
 
-    init(session: RecordingTrimSession) {
+    private var activeDragTarget: DragTarget?
+    private var cachedFilmstrip: NSImage?
+    private var cachedFilmstripWidth: CGFloat = 0
+
+    init(frames: [CGImage], session: RecordingTrimSession) {
+        self.frames = frames
         self.session = session
         super.init(frame: .zero)
         wantsLayer = true
@@ -52,7 +61,7 @@ final class RecordingTrimTimelineView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 520, height: 108)
+        NSSize(width: 520, height: 132)
     }
 
     func update(session: RecordingTrimSession) {
@@ -68,7 +77,11 @@ final class RecordingTrimTimelineView: NSView {
         }
 
         let colors = timelineColors
-        drawTrack(in: trackRect, colors: colors)
+        drawFilmstrip(in: trackRect, colors: colors)
+        drawDimAndSelectionBorder(in: trackRect, colors: colors)
+        drawHandle(at: startHandleX, in: trackRect, colors: colors)
+        drawHandle(at: endHandleX, in: trackRect, colors: colors)
+        drawPlayhead(in: trackRect, colors: colors)
         drawTicks(in: trackRect, colors: colors)
         drawLabels(in: trackRect, colors: colors)
     }
@@ -84,7 +97,7 @@ final class RecordingTrimTimelineView: NSView {
         addCursorRect(handleHitRect(at: startHandleX, in: trackRect), cursor: .resizeLeftRight)
         addCursorRect(handleHitRect(at: endHandleX, in: trackRect), cursor: .resizeLeftRight)
         addCursorRect(playheadHitRect(in: trackRect), cursor: .pointingHand)
-        addCursorRect(trackRect.insetBy(dx: -2, dy: -12), cursor: .pointingHand)
+        addCursorRect(trackRect.insetBy(dx: -2, dy: -16), cursor: .pointingHand)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -138,8 +151,8 @@ final class RecordingTrimTimelineView: NSView {
     private var timelineTrackRect: NSRect {
         let inset = min(horizontalInset, max(0, bounds.width / 4))
         let width = max(1, bounds.width - inset * 2)
-        let y = bounds.midY - trackHeight / 2
-        return NSRect(x: bounds.minX + inset, y: y, width: width, height: trackHeight)
+        let y = bounds.midY - filmstripHeight / 2
+        return NSRect(x: bounds.minX + inset, y: y, width: width, height: filmstripHeight)
     }
 
     private var startHandleX: CGFloat {
@@ -156,23 +169,109 @@ final class RecordingTrimTimelineView: NSView {
 
     private var timelineColors: TimelineColors {
         TimelineColors(
-            track: NSColor.separatorColor.withAlphaComponent(0.55),
-            mutedRegion: NSColor.disabledControlTextColor.withAlphaComponent(0.18),
-            selectedRegion: NSColor.controlAccentColor.withAlphaComponent(0.42),
-            handleFill: NSColor.controlBackgroundColor,
-            handleStroke: NSColor.controlAccentColor,
-            playhead: NSColor.labelColor,
+            dim: NSColor.black.withAlphaComponent(0.55),
+            selectedBorder: NSColor.controlAccentColor,
+            handleFill: NSColor.controlAccentColor,
+            handleNotch: NSColor.white.withAlphaComponent(0.9),
+            playhead: NSColor.white,
+            playheadShadow: NSColor.black.withAlphaComponent(0.55),
             tick: NSColor.tertiaryLabelColor,
             primaryText: NSColor.labelColor,
-            secondaryText: NSColor.secondaryLabelColor
+            secondaryText: NSColor.secondaryLabelColor,
+            stripFallback: NSColor.separatorColor.withAlphaComponent(0.55)
         )
     }
 
-    private func drawTrack(in trackRect: NSRect, colors: TimelineColors) {
-        let basePath = NSBezierPath(roundedRect: trackRect, xRadius: trackHeight / 2, yRadius: trackHeight / 2)
-        colors.track.setFill()
-        basePath.fill()
+    private func drawFilmstrip(in trackRect: NSRect, colors: TimelineColors) {
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
 
+        let clipPath = NSBezierPath(roundedRect: trackRect, xRadius: filmstripCornerRadius, yRadius: filmstripCornerRadius)
+        clipPath.addClip()
+
+        colors.stripFallback.setFill()
+        trackRect.fill()
+
+        let strip = ensureFilmstripImage(width: trackRect.width, height: trackRect.height)
+        strip.draw(
+            in: trackRect,
+            from: NSRect(origin: .zero, size: strip.size),
+            operation: .copy,
+            fraction: 1.0
+        )
+    }
+
+    private func ensureFilmstripImage(width: CGFloat, height: CGFloat) -> NSImage {
+        if let cached = cachedFilmstrip, abs(cachedFilmstripWidth - width) < 0.5 {
+            return cached
+        }
+        let image = renderFilmstrip(width: width, height: height)
+        cachedFilmstrip = image
+        cachedFilmstripWidth = width
+        return image
+    }
+
+    private func renderFilmstrip(width: CGFloat, height: CGFloat) -> NSImage {
+        let size = NSSize(width: max(1, width), height: max(1, height))
+        let image = NSImage(size: size)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        NSColor.black.setFill()
+        NSRect(origin: .zero, size: size).fill()
+
+        guard !frames.isEmpty else {
+            return image
+        }
+
+        let firstFrame = frames[0]
+        let frameAspect = CGFloat(firstFrame.width) / CGFloat(max(1, firstFrame.height))
+        let preferredThumbWidth = max(40, height * frameAspect)
+        let count = max(1, Int((width / preferredThumbWidth).rounded()))
+        let thumbWidth = width / CGFloat(count)
+
+        for index in 0..<count {
+            let frameProgress = (Double(index) + 0.5) / Double(count)
+            let frameIndex = min(frames.count - 1, max(0, Int(frameProgress * Double(frames.count))))
+            let cgFrame = frames[frameIndex]
+            let thumbRect = NSRect(
+                x: CGFloat(index) * thumbWidth,
+                y: 0,
+                width: thumbWidth,
+                height: height
+            )
+            drawAspectFill(cgImage: cgFrame, in: thumbRect)
+        }
+
+        return image
+    }
+
+    private func drawAspectFill(cgImage: CGImage, in rect: NSRect) {
+        let imgW = CGFloat(cgImage.width)
+        let imgH = CGFloat(cgImage.height)
+        guard imgW > 0, imgH > 0, rect.width > 0, rect.height > 0 else {
+            return
+        }
+
+        let imgAspect = imgW / imgH
+        let rectAspect = rect.width / rect.height
+
+        let sourceRect: NSRect
+        if imgAspect > rectAspect {
+            let visibleWidth = imgH * rectAspect
+            let originX = (imgW - visibleWidth) / 2
+            sourceRect = NSRect(x: originX, y: 0, width: visibleWidth, height: imgH)
+        } else {
+            let visibleHeight = imgW / rectAspect
+            let originY = (imgH - visibleHeight) / 2
+            sourceRect = NSRect(x: 0, y: originY, width: imgW, height: visibleHeight)
+        }
+
+        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: imgW, height: imgH))
+        nsImage.draw(in: rect, from: sourceRect, operation: .copy, fraction: 1.0)
+    }
+
+    private func drawDimAndSelectionBorder(in trackRect: NSRect, colors: TimelineColors) {
         let rawSelectionRect = NSRect(
             x: startHandleX,
             y: trackRect.minY,
@@ -181,49 +280,69 @@ final class RecordingTrimTimelineView: NSView {
         )
         let selectionRect = widenedSelectionRect(rawSelectionRect, boundedBy: trackRect)
 
-        drawMutedRegion(from: trackRect.minX, to: selectionRect.minX, in: trackRect, colors: colors)
-        drawMutedRegion(from: selectionRect.maxX, to: trackRect.maxX, in: trackRect, colors: colors)
+        NSGraphicsContext.saveGraphicsState()
+        let clipPath = NSBezierPath(roundedRect: trackRect, xRadius: filmstripCornerRadius, yRadius: filmstripCornerRadius)
+        clipPath.addClip()
 
-        let selectedPath = NSBezierPath(roundedRect: selectionRect, xRadius: trackHeight / 2, yRadius: trackHeight / 2)
-        colors.selectedRegion.setFill()
-        selectedPath.fill()
-
-        drawHandle(at: startHandleX, in: trackRect, colors: colors)
-        drawHandle(at: endHandleX, in: trackRect, colors: colors)
-        drawPlayhead(in: trackRect, colors: colors)
-    }
-
-    private func drawMutedRegion(from minX: CGFloat, to maxX: CGFloat, in trackRect: NSRect, colors: TimelineColors) {
-        guard maxX > minX else {
-            return
+        colors.dim.setFill()
+        if selectionRect.minX > trackRect.minX {
+            NSRect(
+                x: trackRect.minX,
+                y: trackRect.minY,
+                width: selectionRect.minX - trackRect.minX,
+                height: trackRect.height
+            ).fill()
+        }
+        if selectionRect.maxX < trackRect.maxX {
+            NSRect(
+                x: selectionRect.maxX,
+                y: trackRect.minY,
+                width: trackRect.maxX - selectionRect.maxX,
+                height: trackRect.height
+            ).fill()
         }
 
-        let rect = NSRect(x: minX, y: trackRect.minY, width: maxX - minX, height: trackRect.height)
-        let path = NSBezierPath(roundedRect: rect, xRadius: trackHeight / 2, yRadius: trackHeight / 2)
-        colors.mutedRegion.setFill()
-        path.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let borderInset = selectionBorderWidth / 2
+        let borderRect = NSRect(
+            x: selectionRect.minX + borderInset,
+            y: selectionRect.minY + borderInset,
+            width: max(1, selectionRect.width - selectionBorderWidth),
+            height: max(1, selectionRect.height - selectionBorderWidth)
+        )
+        let borderPath = NSBezierPath(rect: borderRect)
+        borderPath.lineWidth = selectionBorderWidth
+        colors.selectedBorder.setStroke()
+        borderPath.stroke()
     }
 
     private func drawHandle(at x: CGFloat, in trackRect: NSRect, colors: TimelineColors) {
         let rect = handleRect(at: x, in: trackRect)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
         colors.handleFill.setFill()
         path.fill()
-        colors.handleStroke.setStroke()
-        path.lineWidth = 1.5
-        path.stroke()
 
-        let notchX = rect.midX
         let notchPath = NSBezierPath()
-        notchPath.move(to: NSPoint(x: notchX, y: rect.minY + 8))
-        notchPath.line(to: NSPoint(x: notchX, y: rect.maxY - 8))
-        colors.tick.setStroke()
-        notchPath.lineWidth = 1
+        let notchInset = rect.height * 0.32
+        notchPath.move(to: NSPoint(x: rect.midX, y: rect.minY + notchInset))
+        notchPath.line(to: NSPoint(x: rect.midX, y: rect.maxY - notchInset))
+        colors.handleNotch.setStroke()
+        notchPath.lineWidth = 1.5
+        notchPath.lineCapStyle = .round
         notchPath.stroke()
     }
 
     private func drawPlayhead(in trackRect: NSRect, colors: TimelineColors) {
         let x = playheadX
+
+        let shadowPath = NSBezierPath()
+        shadowPath.move(to: NSPoint(x: x + 1, y: trackRect.minY - 8))
+        shadowPath.line(to: NSPoint(x: x + 1, y: trackRect.maxY + 18))
+        colors.playheadShadow.setStroke()
+        shadowPath.lineWidth = 3
+        shadowPath.stroke()
+
         let linePath = NSBezierPath()
         linePath.move(to: NSPoint(x: x, y: trackRect.minY - 9))
         linePath.line(to: NSPoint(x: x, y: trackRect.maxY + 18))

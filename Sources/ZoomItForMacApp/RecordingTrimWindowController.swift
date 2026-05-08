@@ -9,8 +9,8 @@ enum RecordingTrimResult: Equatable {
 
 @MainActor
 final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate {
-    private static let preferredWindowSize = NSSize(width: 560, height: 420)
-    private static let minimumWindowSize = NSSize(width: 460, height: 360)
+    private static let preferredWindowSize = NSSize(width: 600, height: 480)
+    private static let minimumWindowSize = NSSize(width: 480, height: 420)
     private static let screenMargin: CGFloat = 64
 
     private let frames: [CGImage]
@@ -45,7 +45,7 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
         self.frames = frames
         self.modeLabel = trimmedModeLabel.isEmpty ? "recording" : trimmedModeLabel
         self.session = initialSession
-        self.timelineView = RecordingTrimTimelineView(session: initialSession)
+        self.timelineView = RecordingTrimTimelineView(frames: frames, session: initialSession)
 
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.preferredWindowSize),
@@ -169,7 +169,7 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
             timelineView.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 12),
             timelineView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             timelineView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            timelineView.heightAnchor.constraint(equalToConstant: 76),
+            timelineView.heightAnchor.constraint(equalToConstant: 132),
 
             statsView.topAnchor.constraint(equalTo: timelineView.bottomAnchor, constant: 10),
             statsView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
