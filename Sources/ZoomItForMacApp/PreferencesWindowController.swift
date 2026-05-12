@@ -618,13 +618,22 @@ final class PreferencesWindowController: NSWindowController {
         field.isBordered = true
         field.lineBreakMode = .byTruncatingMiddle
         field.cell?.truncatesLastVisibleLine = true
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let button = NSButton(title: "Browse…", target: self, action: action)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.bezelStyle = .rounded
         button.controlSize = .small
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         let stack = NSStackView(views: [field, button])
         stack.orientation = .horizontal
         stack.spacing = 6
+        stack.distribution = .fill
+        // Pin the text field to a consistent width so the textbox stays visible
+        // even when the path string is empty (otherwise the field's intrinsic
+        // content size collapses and only the Browse button is rendered).
+        field.widthAnchor.constraint(equalToConstant: 180).isActive = true
         return stack
     }
 
