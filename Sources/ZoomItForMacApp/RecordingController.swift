@@ -337,6 +337,7 @@ final class RecordingController {
             return
         }
 
+        let compositedImage = imageWithCursor(from: snapshot, mouseLocation: NSEvent.mouseLocation)
         let frame: CGImage
         if let targetCaptureRegion {
             guard
@@ -345,16 +346,63 @@ final class RecordingController {
                     within: snapshot.screenFrame,
                     scaleFactor: snapshot.scaleFactor
                 ),
-                let croppedFrame = snapshot.image.cropping(to: cropRect)
+                let croppedFrame = compositedImage.cropping(to: cropRect)
             else {
                 return
             }
             frame = croppedFrame
         } else {
-            frame = snapshot.image
+            frame = compositedImage
         }
 
         capturedFrames.append(frame)
+    }
+
+    private func imageWithCursor(from snapshot: ScreenSnapshot, mouseLocation: CGPoint) -> CGImage {
+        let cursor = NSCursor.current
+        let cursorSize = cursor.image.size
+        guard
+            let cursorRect = CaptureGeometry.cursorRect(
+                at: mouseLocation,
+                cursorSize: cursorSize,
+                cursorHotSpot: cursor.hotSpot,
+                within: snapshot.screenFrame,
+                scaleFactor: snapshot.scaleFactor
+            ),
+            let cursorImage = cursorCGImage(cursor)
+        else {
+            return snapshot.image
+        }
+
+        guard
+            let colorSpace = snapshot.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil,
+                width: snapshot.image.width,
+                height: snapshot.image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+            )
+        else {
+            return snapshot.image
+        }
+
+        let imageBounds = CGRect(x: 0, y: 0, width: snapshot.image.width, height: snapshot.image.height)
+        context.draw(snapshot.image, in: imageBounds)
+        context.draw(cursorImage, in: CGRect(
+            x: cursorRect.minX,
+            y: CGFloat(snapshot.image.height) - cursorRect.maxY,
+            width: cursorRect.width,
+            height: cursorRect.height
+        ))
+        return context.makeImage() ?? snapshot.image
+    }
+
+    private func cursorCGImage(_ cursor: NSCursor) -> CGImage? {
+        var proposedRect = CGRect(origin: .zero, size: cursor.image.size)
+        return cursor.image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
     }
 
     private func selectRecordingRegion() throws -> CGRect {

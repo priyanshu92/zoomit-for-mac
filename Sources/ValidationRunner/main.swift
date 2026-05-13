@@ -12,6 +12,7 @@ enum ValidationRunner {
         try validateAppSettingsReset()
         try validateDerivedAppSettings()
         try validateCaptureGeometry()
+        try validateCursorGeometry()
         try validateRecordingFrameRange()
         try validateRecordingTrimSession()
         print("ValidationRunner: all checks passed")
@@ -146,6 +147,37 @@ enum ValidationRunner {
         let cropRect = CaptureGeometry.cropRect(for: selection, within: screenFrame, scaleFactor: 2)
 
         try expect(cropRect == CGRect(x: 300, y: 1160, width: 400, height: 240), "Crop rect should convert to pixel coordinates")
+    }
+
+    private static func validateCursorGeometry() throws {
+        let screenFrame = CGRect(x: 100, y: 200, width: 1000, height: 800)
+        let cursorRect = CaptureGeometry.cursorRect(
+            at: CGPoint(x: 250, y: 900),
+            cursorSize: CGSize(width: 28, height: 40),
+            cursorHotSpot: CGPoint(x: 4, y: 2),
+            within: screenFrame,
+            scaleFactor: 2
+        )
+
+        try expect(cursorRect == CGRect(x: 292, y: 196, width: 56, height: 80), "Cursor rect should convert hotspot to pixel coordinates")
+
+        let partiallyClippedRect = CaptureGeometry.cursorRect(
+            at: CGPoint(x: 101, y: 999),
+            cursorSize: CGSize(width: 28, height: 40),
+            cursorHotSpot: CGPoint(x: 4, y: 2),
+            within: screenFrame,
+            scaleFactor: 2
+        )
+        try expect(partiallyClippedRect != nil, "Partially visible cursor should be retained for drawing")
+
+        let outsideRect = CaptureGeometry.cursorRect(
+            at: CGPoint(x: 99, y: 999),
+            cursorSize: CGSize(width: 28, height: 40),
+            cursorHotSpot: CGPoint(x: 4, y: 2),
+            within: screenFrame,
+            scaleFactor: 2
+        )
+        try expect(outsideRect == nil, "Cursor outside the captured screen should be ignored")
     }
 
     private static func validateRecordingFrameRange() throws {

@@ -28,6 +28,43 @@ public enum CaptureGeometry {
         return CGRect(x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight)
     }
 
+    public static func cursorRect(
+        at mouseLocation: CGPoint,
+        cursorSize: CGSize,
+        cursorHotSpot: CGPoint,
+        within screenFrame: CGRect,
+        scaleFactor: CGFloat
+    ) -> CGRect? {
+        let normalizedFrame = screenFrame.standardized
+        guard
+            normalizedFrame.contains(mouseLocation),
+            cursorSize.width > 0,
+            cursorSize.height > 0,
+            scaleFactor > 0
+        else {
+            return nil
+        }
+
+        let imageBounds = CGRect(
+            x: 0,
+            y: 0,
+            width: normalizedFrame.width * scaleFactor,
+            height: normalizedFrame.height * scaleFactor
+        )
+        let rect = CGRect(
+            x: floor((mouseLocation.x - normalizedFrame.minX - cursorHotSpot.x) * scaleFactor),
+            y: floor((normalizedFrame.maxY - mouseLocation.y - cursorHotSpot.y) * scaleFactor),
+            width: ceil(cursorSize.width * scaleFactor),
+            height: ceil(cursorSize.height * scaleFactor)
+        )
+
+        guard rect.intersects(imageBounds) else {
+            return nil
+        }
+
+        return rect
+    }
+
     public static func panoramaCanvas(for screenFrames: [CGRect]) -> CGRect? {
         guard var union = screenFrames.first?.standardized else {
             return nil
