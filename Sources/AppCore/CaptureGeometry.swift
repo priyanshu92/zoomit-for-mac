@@ -65,6 +65,52 @@ public enum CaptureGeometry {
         return rect
     }
 
+    /// Converts from AppKit's screen coordinate space to the display/Accessibility
+    /// coordinate space used by CoreGraphics and AX APIs.
+    public static func displayPoint(
+        forScreenPoint point: CGPoint,
+        displayOriginReferenceHeight: CGFloat
+    ) -> CGPoint? {
+        guard
+            point.x.isFinite,
+            point.y.isFinite,
+            displayOriginReferenceHeight.isFinite,
+            displayOriginReferenceHeight > 0
+        else {
+            return nil
+        }
+
+        return CGPoint(x: point.x, y: displayOriginReferenceHeight - point.y)
+    }
+
+    /// Converts from the display/Accessibility coordinate space used by CoreGraphics
+    /// and AX APIs back into AppKit's screen coordinate space.
+    public static func screenRect(
+        forDisplayRect displayRect: CGRect,
+        displayOriginReferenceHeight: CGFloat
+    ) -> CGRect? {
+        let normalizedRect = displayRect.standardized
+        guard
+            normalizedRect.minX.isFinite,
+            normalizedRect.minY.isFinite,
+            normalizedRect.width.isFinite,
+            normalizedRect.height.isFinite,
+            normalizedRect.width > 0,
+            normalizedRect.height > 0,
+            displayOriginReferenceHeight.isFinite,
+            displayOriginReferenceHeight > 0
+        else {
+            return nil
+        }
+
+        return CGRect(
+            x: normalizedRect.minX,
+            y: displayOriginReferenceHeight - normalizedRect.maxY,
+            width: normalizedRect.width,
+            height: normalizedRect.height
+        ).integral
+    }
+
     public static func panoramaCanvas(for screenFrames: [CGRect]) -> CGRect? {
         guard var union = screenFrames.first?.standardized else {
             return nil

@@ -86,6 +86,26 @@ final class RecordingTrimTimelineView: NSView {
         drawLabels(in: trackRect, colors: colors)
     }
 
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+
+        let trackRect = timelineTrackRect
+        guard trackRect.width > 0, cachedFilmstrip == nil else {
+            return
+        }
+
+        cachedFilmstrip = renderFilmstrip(width: trackRect.width, height: trackRect.height)
+        cachedFilmstripWidth = trackRect.width
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        cachedFilmstrip = nil
+        cachedFilmstripWidth = 0
+        needsDisplay = true
+        discardCursorRects()
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
 
@@ -202,8 +222,10 @@ final class RecordingTrimTimelineView: NSView {
     }
 
     private func ensureFilmstripImage(width: CGFloat, height: CGFloat) -> NSImage {
-        if let cached = cachedFilmstrip, abs(cachedFilmstripWidth - width) < 0.5 {
-            return cached
+        if let cached = cachedFilmstrip {
+            if inLiveResize || abs(cachedFilmstripWidth - width) < 0.5 {
+                return cached
+            }
         }
         let image = renderFilmstrip(width: width, height: height)
         cachedFilmstrip = image

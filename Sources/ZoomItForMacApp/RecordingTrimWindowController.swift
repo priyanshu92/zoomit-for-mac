@@ -55,6 +55,7 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
         )
         window.title = "Trim Recording"
         window.isReleasedWhenClosed = false
+        window.animationBehavior = .documentWindow
         Self.fitWindowToVisibleScreen(window)
         window.minSize = Self.minimumSizeForCurrentScreen()
 
@@ -141,6 +142,7 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
     private func configureUI(in window: NSWindow) {
         let contentView = NSView()
         contentView.autoresizingMask = [.width, .height]
+        contentView.wantsLayer = true
         window.contentView = contentView
 
         let headerView = makeHeaderView()

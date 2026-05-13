@@ -225,8 +225,9 @@ final class RecordingController {
         targetScreenFrame = snapshot.screenFrame
         targetCaptureRegion = mode.region
         recordingMode = mode
-        try runCountdown(on: snapshot.screenFrame, highlighting: mode.region)
-        showRecordingHighlightIfNeeded(on: snapshot.screenFrame, highlightedRegion: mode.region)
+        let recordingBorderRegion = mode.region ?? snapshot.screenFrame
+        try runCountdown(on: snapshot.screenFrame, highlighting: recordingBorderRegion)
+        showRecordingHighlightIfNeeded(on: snapshot.screenFrame, highlightedRegion: recordingBorderRegion)
         capturedFrames.removeAll()
         recordingStartedAt = Date()
         captureFrame()
@@ -328,7 +329,7 @@ final class RecordingController {
 
     private func captureFrame() {
         let point = targetCaptureRegion?.center ?? targetScreenPoint ?? NSEvent.mouseLocation
-        guard let snapshot = screenCaptureService.captureScreen(containing: point) else {
+        guard let snapshot = captureRecordingSnapshot(containing: point) else {
             return
         }
 
@@ -356,6 +357,37 @@ final class RecordingController {
         }
 
         capturedFrames.append(frame)
+    }
+
+    private func captureRecordingSnapshot(containing point: CGPoint) -> ScreenSnapshot? {
+        guard let recordingHighlightWindow else {
+            return screenCaptureService.captureScreen(containing: point)
+        }
+
+        guard
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
+            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else {
+            return screenCaptureService.captureScreen(containing: point)
+        }
+
+        let image = CGWindowListCreateImage(
+            CGDisplayBounds(displayID),
+            .optionOnScreenBelowWindow,
+            CGWindowID(recordingHighlightWindow.windowNumber),
+            .bestResolution
+        ) ?? CGDisplayCreateImage(displayID)
+
+        guard let image else {
+            return screenCaptureService.captureScreen(containing: point)
+        }
+
+        return ScreenSnapshot(
+            displayID: displayID,
+            image: image,
+            screenFrame: screen.frame,
+            scaleFactor: screen.backingScaleFactor
+        )
     }
 
     private func imageWithCursor(from snapshot: ScreenSnapshot, mouseLocation: CGPoint) -> CGImage {
@@ -424,23 +456,32 @@ final class RecordingController {
 
     private func hoveredWindowFrame() throws -> CGRect {
         let mouseLocation = NSEvent.mouseLocation
+        guard let accessibilityPoint = accessibilityPoint(for: mouseLocation) else {
+            throw RecordingControllerError.hoveredWindowUnavailable
+        }
+
         let systemWide = AXUIElementCreateSystemWide()
         var elementReference: AXUIElement?
-        let hitTestResult = AXUIElementCopyElementAtPosition(systemWide, Float(mouseLocation.x), Float(mouseLocation.y), &elementReference)
+        let hitTestResult = AXUIElementCopyElementAtPosition(
+            systemWide,
+            Float(accessibilityPoint.x),
+            Float(accessibilityPoint.y),
+            &elementReference
+        )
 
         if hitTestResult == .success,
            let elementReference,
            let window = windowElement(containing: elementReference),
-           let frame = frame(of: window) {
-            return frame.integral
+           let frame = recordableFrame(of: window, preferredPoint: mouseLocation) {
+            return frame
         }
 
         if let frontmostApplication = NSWorkspace.shared.frontmostApplication {
             let applicationElement = AXUIElementCreateApplication(frontmostApplication.processIdentifier)
             let focusedWindow: AXUIElement? = attributeValue(kAXFocusedWindowAttribute as CFString, of: applicationElement)
             if let focusedWindow,
-               let frame = frame(of: focusedWindow) {
-                return frame.integral
+               let frame = recordableFrame(of: focusedWindow, preferredPoint: mouseLocation) {
+                return frame
             }
         }
 
@@ -474,7 +515,21 @@ final class RecordingController {
         return typedValue
     }
 
-    private func frame(of element: AXUIElement) -> CGRect? {
+    private func recordableFrame(of element: AXUIElement, preferredPoint: CGPoint) -> CGRect? {
+        guard
+            let displayFrame = displayFrame(of: element),
+            let screenFrame = CaptureGeometry.screenRect(
+                forDisplayRect: displayFrame,
+                displayOriginReferenceHeight: displayOriginReferenceHeight()
+            )
+        else {
+            return nil
+        }
+
+        return clampedFrameToScreen(screenFrame, preferredPoint: preferredPoint)
+    }
+
+    private func displayFrame(of element: AXUIElement) -> CGRect? {
         guard
             let positionValue: AXValue = attributeValue(kAXPositionAttribute as CFString, of: element),
             let sizeValue: AXValue = attributeValue(kAXSizeAttribute as CFString, of: element)
@@ -489,6 +544,46 @@ final class RecordingController {
         }
 
         return CGRect(origin: position, size: size)
+    }
+
+    private func accessibilityPoint(for screenPoint: CGPoint) -> CGPoint? {
+        CaptureGeometry.displayPoint(
+            forScreenPoint: screenPoint,
+            displayOriginReferenceHeight: displayOriginReferenceHeight()
+        )
+    }
+
+    private func displayOriginReferenceHeight() -> CGFloat {
+        let mainDisplayID = CGMainDisplayID()
+        if let mainDisplayScreen = NSScreen.screens.first(where: { screen in
+            (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == mainDisplayID
+        }) {
+            return mainDisplayScreen.frame.maxY
+        }
+
+        return NSScreen.screens.first?.frame.maxY ?? 0
+    }
+
+    private func clampedFrameToScreen(_ frame: CGRect, preferredPoint: CGPoint) -> CGRect? {
+        if let preferredScreen = NSScreen.screens.first(where: { $0.frame.contains(preferredPoint) }),
+           let clampedFrame = validIntersection(frame, with: preferredScreen.frame) {
+            return clampedFrame
+        }
+
+        return NSScreen.screens
+            .compactMap { validIntersection(frame, with: $0.frame) }
+            .max { lhs, rhs in
+                (lhs.width * lhs.height) < (rhs.width * rhs.height)
+            }
+    }
+
+    private func validIntersection(_ frame: CGRect, with screenFrame: CGRect) -> CGRect? {
+        let intersection = frame.standardized.intersection(screenFrame.standardized).integral
+        guard !intersection.isNull, intersection.width >= 1, intersection.height >= 1 else {
+            return nil
+        }
+
+        return intersection
     }
 
     private func writeGIF(to destinationURL: URL, settings: AppSettings, frameRange: RecordingFrameRange) -> URL? {
@@ -799,15 +894,7 @@ final class RecordingController {
         }
 
         let lineWidth: CGFloat = 3
-        // Inflate the recording-highlight window by `lineWidth + 1` so the red
-        // stroke sits entirely in the outer ring (between the window edge and
-        // the recorded region) with a 1px gap for sub-pixel rounding from
-        // `.integral`. Without this gap the stroke is captured by the screen
-        // recorder and bleeds into the saved GIF/MP4.
-        let highlightInset: CGFloat = lineWidth + 1
-        let windowFrame = dimBackground
-            ? screenFrame
-            : highlightedRegion.insetBy(dx: -highlightInset, dy: -highlightInset).integral
+        let windowFrame = screenFrame
 
         let window = OverlayPanel(
             contentRect: windowFrame,
@@ -821,23 +908,25 @@ final class RecordingController {
         window.isOpaque = false
         window.ignoresMouseEvents = true
         window.hasShadow = false
+        window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let localHighlightedRegion = dimBackground
-            ? CGRect(
-                x: highlightedRegion.minX - screenFrame.minX,
-                y: highlightedRegion.minY - screenFrame.minY,
-                width: highlightedRegion.width,
-                height: highlightedRegion.height
-            ).integral
-            : CGRect(origin: .zero, size: windowFrame.size).insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        let localHighlightedRegion = CGRect(
+            x: highlightedRegion.minX - screenFrame.minX,
+            y: highlightedRegion.minY - screenFrame.minY,
+            width: highlightedRegion.width,
+            height: highlightedRegion.height
+        ).integral
 
-        window.contentView = RecordingRegionHighlightView(
+        let highlightView = RecordingRegionHighlightView(
             frame: CGRect(origin: .zero, size: windowFrame.size),
             highlightedRegion: localHighlightedRegion,
             lineWidth: lineWidth,
             dimBackground: dimBackground
         )
+        highlightView.autoresizingMask = [.width, .height]
+        window.contentView = highlightView
+        window.setFrame(windowFrame, display: true)
         return window
     }
 
@@ -859,6 +948,7 @@ final class RecordingController {
             dimBackground: false
         )
         window?.orderFrontRegardless()
+        window?.contentView?.displayIfNeeded()
         recordingHighlightWindow = window
     }
 
@@ -926,7 +1016,12 @@ private final class RecordingRegionHighlightView: NSView {
             highlightedRegion.fill(using: .clear)
         }
 
-        let strokePath = NSBezierPath(rect: highlightedRegion)
+        let visibleHighlightedRegion = highlightedRegion.intersection(bounds).insetBy(dx: strokeLineWidth / 2, dy: strokeLineWidth / 2)
+        guard !visibleHighlightedRegion.isNull, visibleHighlightedRegion.width > 0, visibleHighlightedRegion.height > 0 else {
+            return
+        }
+
+        let strokePath = NSBezierPath(rect: visibleHighlightedRegion)
         NSColor.systemRed.setStroke()
         strokePath.lineWidth = strokeLineWidth
         strokePath.stroke()

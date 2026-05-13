@@ -13,6 +13,7 @@ enum ValidationRunner {
         try validateDerivedAppSettings()
         try validateCaptureGeometry()
         try validateCursorGeometry()
+        try validateDisplayCoordinateConversion()
         try validateRecordingFrameRange()
         try validateRecordingTrimSession()
         print("ValidationRunner: all checks passed")
@@ -178,6 +179,39 @@ enum ValidationRunner {
             scaleFactor: 2
         )
         try expect(outsideRect == nil, "Cursor outside the captured screen should be ignored")
+    }
+
+    private static func validateDisplayCoordinateConversion() throws {
+        let referenceHeight: CGFloat = 1117
+        let appKitPoint = CGPoint(x: -100, y: 1200)
+        let displayPoint = CaptureGeometry.displayPoint(
+            forScreenPoint: appKitPoint,
+            displayOriginReferenceHeight: referenceHeight
+        )
+        try expect(displayPoint == CGPoint(x: -100, y: -83), "AppKit point should flip into display coordinates")
+
+        let externalDisplayRect = CGRect(x: -1725, y: -1440, width: 2560, height: 1440)
+        let externalScreenRect = CaptureGeometry.screenRect(
+            forDisplayRect: externalDisplayRect,
+            displayOriginReferenceHeight: referenceHeight
+        )
+        try expect(externalScreenRect == CGRect(x: -1725, y: 1117, width: 2560, height: 1440), "Display rect should flip into AppKit coordinates")
+
+        let primaryDisplayRect = CGRect(x: 100, y: 80, width: 640, height: 480)
+        let primaryScreenRect = CaptureGeometry.screenRect(
+            forDisplayRect: primaryDisplayRect,
+            displayOriginReferenceHeight: referenceHeight
+        )
+        try expect(primaryScreenRect == CGRect(x: 100, y: 557, width: 640, height: 480), "Primary display rect conversion mismatch")
+
+        try expect(
+            CaptureGeometry.displayPoint(forScreenPoint: CGPoint(x: 0, y: 0), displayOriginReferenceHeight: 0) == nil,
+            "Invalid display reference height should reject point conversion"
+        )
+        try expect(
+            CaptureGeometry.screenRect(forDisplayRect: .zero, displayOriginReferenceHeight: referenceHeight) == nil,
+            "Empty display rect should reject screen conversion"
+        )
     }
 
     private static func validateRecordingFrameRange() throws {
