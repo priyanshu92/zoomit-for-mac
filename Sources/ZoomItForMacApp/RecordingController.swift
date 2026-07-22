@@ -148,6 +148,7 @@ private enum RecordingMode {
 @MainActor
 final class RecordingController {
     private let screenCaptureService: ScreenCaptureService
+    private let clipboardService: ClipboardService
     private let settingsStore: AppSettingsStore
 
     private var timer: Timer?
@@ -159,8 +160,13 @@ final class RecordingController {
     private var recordingStartedAt: Date?
     private var recordingHighlightWindow: NSWindow?
 
-    init(screenCaptureService: ScreenCaptureService, settingsStore: AppSettingsStore) {
+    init(
+        screenCaptureService: ScreenCaptureService,
+        clipboardService: ClipboardService,
+        settingsStore: AppSettingsStore
+    ) {
         self.screenCaptureService = screenCaptureService
+        self.clipboardService = clipboardService
         self.settingsStore = settingsStore
     }
 
@@ -295,6 +301,8 @@ final class RecordingController {
             savedURL = url
         }
 
+        clipboardService.copy(text: savedURL.path)
+
         let duration = exportFrameRange.duration(atFramesPerSecond: settings.validatedRecordingFramesPerSecond)
         let fileSize = (try? savedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let formatter = ByteCountFormatter()
@@ -302,7 +310,7 @@ final class RecordingController {
 
         return RecordingToggleResult(
             title: "Recording saved",
-            message: "Saved \(completedMode.label) \(selection.format.title) recording (\(exportFrameRange.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path)",
+            message: "Saved \(completedMode.label) \(selection.format.title) recording (\(exportFrameRange.count) frames, \(String(format: "%.1f", duration))s, \(formatter.string(fromByteCount: Int64(fileSize)))) to \(savedURL.path). The file path was copied to the clipboard.",
             shouldPresentAlert: true
         )
     }

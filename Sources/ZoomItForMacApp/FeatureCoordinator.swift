@@ -41,7 +41,11 @@ final class FeatureCoordinator {
         )
         self.breakTimerController = BreakTimerController(settingsStore: settingsStore)
         self.demoTypeController = DemoTypeController(settingsStore: settingsStore, clipboardService: clipboardService)
-        self.recordingController = RecordingController(screenCaptureService: screenCaptureService, settingsStore: settingsStore)
+        self.recordingController = RecordingController(
+            screenCaptureService: screenCaptureService,
+            clipboardService: clipboardService,
+            settingsStore: settingsStore
+        )
         self.snipController = SnipController(
             screenCaptureService: screenCaptureService,
             clipboardService: clipboardService,
