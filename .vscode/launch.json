@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:zoomit-for-mac}",
+            "name": "Debug ZoomItForMacApp",
+            "target": "ZoomItForMacApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ZoomItForMacApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:zoomit-for-mac}",
+            "name": "Release ZoomItForMacApp",
+            "target": "ZoomItForMacApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ZoomItForMacApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:zoomit-for-mac}",
+            "name": "Debug ValidationRunner",
+            "target": "ValidationRunner",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ValidationRunner"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:zoomit-for-mac}",
+            "name": "Release ValidationRunner",
+            "target": "ValidationRunner",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ValidationRunner"
+        }
+    ]
+}
