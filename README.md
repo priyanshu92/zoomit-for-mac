@@ -25,6 +25,11 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 | Panorama | `Ctrl+8` | Select a region, scroll the page, then press `Esc` or `Ctrl+8` again to stitch the captures into one image and copy it to the clipboard. |
 | Save Panorama | `Ctrl+Shift+8` | Same as Panorama, but writes the stitched image to a PNG via save dialog. |
 
+### Menu Bar
+
+Every feature is also listed in the menu bar icon's menu, so you can click an item instead of remembering its shortcut.
+Items are grouped by feature (zoom, draw, record, snip, panorama, DemoType, break timer) and each one shows its current shortcut on the right, including any you have customized in Preferences.
+
 ### Draw Mode Tools
 
 While in draw mode (`Ctrl+1` click or `Ctrl+2`):

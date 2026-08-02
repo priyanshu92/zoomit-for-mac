@@ -5,6 +5,7 @@ import ServiceManagement
 
 @MainActor
 protocol StatusItemControllerDelegate: AnyObject {
+    func triggerFeatureAction(_ action: ShortcutAction)
     func showPreferences()
     func requestScreenRecordingPermission()
     func requestAccessibilityPermission()
@@ -46,6 +47,10 @@ final class StatusItemController: NSObject {
     func refresh() {
         let menu = NSMenu()
         menu.autoenablesItems = false
+
+        addFeatureActionItems(to: menu)
+
+        menu.addItem(.separator())
 
         let preferencesItem = NSMenuItem(
             title: "Preferences…",
@@ -112,6 +117,64 @@ final class StatusItemController: NSObject {
         SMAppService.mainApp.status == .enabled
     }
 
+    private func addFeatureActionItems(to menu: NSMenu) {
+        for (index, group) in ShortcutCatalog.menuActionGroups.enumerated() {
+            if index > 0 {
+                menu.addItem(.separator())
+            }
+
+            for action in group {
+                menu.addItem(makeFeatureActionItem(for: action))
+            }
+        }
+    }
+
+    private func makeFeatureActionItem(for action: ShortcutAction) -> NSMenuItem {
+        let binding = shortcutStore.binding(for: action)
+
+        // AppKit matches key equivalents against `charactersIgnoringModifiers`, which is
+        // lowercase for letters, so the stored uppercase key has to be lowered here.
+        let item = NSMenuItem(
+            title: menuTitle(for: action),
+            action: #selector(triggerFeatureAction(_:)),
+            keyEquivalent: binding.key.lowercased()
+        )
+        item.keyEquivalentModifierMask = modifierFlags(for: binding.modifiers)
+        item.target = self
+        item.isEnabled = true
+        // Enums don't bridge to Objective-C, so round-trip through the raw value instead.
+        item.representedObject = action.rawValue
+        return item
+    }
+
+    /// macOS HIG: a command that needs more input before it can finish gets a trailing
+    /// ellipsis. These actions all ask the user to pick a region or a window first.
+    private func menuTitle(for action: ShortcutAction) -> String {
+        switch action {
+        case .snip, .saveSnip, .ocrSnip, .cropRecord, .windowRecord, .panorama, .savePanorama:
+            return "\(action.title)…"
+        case .zoom, .liveZoom, .draw, .liveDraw, .record, .demoType, .previousDemoType, .breakTimer:
+            return action.title
+        }
+    }
+
+    private func modifierFlags(for modifiers: ShortcutModifiers) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers.contains(.control) {
+            flags.insert(.control)
+        }
+        if modifiers.contains(.option) {
+            flags.insert(.option)
+        }
+        if modifiers.contains(.shift) {
+            flags.insert(.shift)
+        }
+        if modifiers.contains(.command) {
+            flags.insert(.command)
+        }
+        return flags
+    }
+
     private func addPermissionActionItem(
         to menu: NSMenu,
         status: PermissionStatus,
@@ -135,6 +198,16 @@ final class StatusItemController: NSObject {
         let configuredImage = image?.withSymbolConfiguration(configuration)
         configuredImage?.isTemplate = true
         return configuredImage
+    }
+
+    @objc private func triggerFeatureAction(_ sender: NSMenuItem) {
+        guard
+            let rawValue = sender.representedObject as? String,
+            let action = ShortcutAction(rawValue: rawValue)
+        else {
+            return
+        }
+        delegate?.triggerFeatureAction(action)
     }
 
     @objc private func openPreferences() {

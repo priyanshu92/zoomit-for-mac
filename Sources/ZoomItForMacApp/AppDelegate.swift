@@ -98,6 +98,10 @@ private func snipEventTapCallback(
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Time to let the status menu finish closing before a menu-triggered feature runs.
+    /// Menu dismissal is animated, so acting immediately captures a half-faded menu.
+    fileprivate static let menuDismissalSettleDelay: TimeInterval = 0.25
+
     private let shortcutStore = UserDefaultsShortcutStore()
     private let settingsStore = UserDefaultsAppSettingsStore()
     private let permissionsService = MacPermissionsService()
@@ -220,6 +224,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: StatusItemControllerDelegate {
+    func triggerFeatureAction(_ action: ShortcutAction) {
+        // The status menu is still fading out when its action fires, and capture-based
+        // features (zoom, snip, record, panorama) photograph whatever is on screen at that
+        // instant, which would include the menu itself. The hotkey path sidesteps this by
+        // pre-capturing inside the CGEvent tap; from a menu click the only option is to let
+        // the window server finish tearing the menu down first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.menuDismissalSettleDelay) { [weak self] in
+            self?.featureCoordinator.trigger(action)
+        }
+    }
+
     func showPreferences() {
         preferencesController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

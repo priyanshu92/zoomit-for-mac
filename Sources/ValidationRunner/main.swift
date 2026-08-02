@@ -5,6 +5,7 @@ import Foundation
 enum ValidationRunner {
     static func main() throws {
         try validateWindowsEquivalentDefaults()
+        try validateMenuActionGroups()
         try validateShortcutParser()
         try validateShortcutStoreFallbacks()
         try validateShortcutStorePersistence()
@@ -35,6 +36,22 @@ enum ValidationRunner {
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.ocrSnip]?.windowsStyleDescription == "Ctrl+Alt+6", "OCR snip shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.panorama]?.windowsStyleDescription == "Ctrl+8", "Panorama shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.savePanorama]?.windowsStyleDescription == "Ctrl+Shift+8", "Save Panorama shortcut mismatch")
+    }
+
+    private static func validateMenuActionGroups() throws {
+        let grouped = ShortcutCatalog.menuActionGroups.flatMap { $0 }
+        try expect(
+            Set(grouped) == Set(ShortcutAction.allCases),
+            "Menu action groups must cover every ShortcutAction"
+        )
+        try expect(
+            grouped.count == ShortcutAction.allCases.count,
+            "Menu action groups must not repeat a ShortcutAction"
+        )
+        try expect(
+            ShortcutCatalog.menuActionGroups.allSatisfy { !$0.isEmpty },
+            "Menu action groups must not contain an empty group"
+        )
     }
 
     private static func validateShortcutStoreFallbacks() throws {

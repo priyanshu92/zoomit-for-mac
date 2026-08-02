@@ -167,6 +167,20 @@ public enum ShortcutCatalog {
         }
     }
 
+    /// Feature actions arranged the way the menu bar presents them: each inner array is a
+    /// block of related actions, rendered with a separator between blocks. Every
+    /// `ShortcutAction` must appear exactly once. `validateMenuActionGroups` enforces that
+    /// so a newly added action can't silently go missing from the menu.
+    public static let menuActionGroups: [[ShortcutAction]] = [
+        [.zoom, .liveZoom],
+        [.draw, .liveDraw],
+        [.record, .cropRecord, .windowRecord],
+        [.snip, .saveSnip, .ocrSnip],
+        [.panorama, .savePanorama],
+        [.demoType, .previousDemoType],
+        [.breakTimer]
+    ]
+
     public static func keyCode(for key: String) -> UInt32? {
         keyCodes[key.uppercased()]
     }
