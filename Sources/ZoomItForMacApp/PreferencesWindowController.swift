@@ -35,6 +35,10 @@ private enum PreferencesSection: Int, CaseIterable {
 
 @MainActor
 final class PreferencesWindowController: NSWindowController {
+    /// Key the window position is saved under in `UserDefaults`. Changing it resets every
+    /// user back to a centered window.
+    private static let frameAutosaveName = NSWindow.FrameAutosaveName("ZoomItPreferencesWindow")
+
     private let shortcutStore: ShortcutStore
     private let settingsStore: AppSettingsStore
     private let permissionsService: PermissionsService
@@ -83,6 +87,15 @@ final class PreferencesWindowController: NSWindowController {
         window.title = "ZoomIt for Mac"
         window.titlebarAppearsTransparent = true
         super.init(window: window)
+
+        // The window is built programmatically, so AppKit would otherwise leave it at the
+        // contentRect origin (0,0 = bottom-left of the main screen) and cascade it from
+        // there. Center it, but let a position the user has chosen win on later launches.
+        shouldCascadeWindows = false
+        if !window.setFrameUsingName(Self.frameAutosaveName) {
+            window.center()
+        }
+        window.setFrameAutosaveName(Self.frameAutosaveName)
 
         configureUI(in: window)
         loadPersistedValuesIntoForm()

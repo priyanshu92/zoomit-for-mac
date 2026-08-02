@@ -59,32 +59,40 @@ final class StatusItemController: NSObject {
         )
         preferencesItem.target = self
         preferencesItem.isEnabled = true
+        preferencesItem.image = Self.menuIcon(named: "gearshape")
         menu.addItem(preferencesItem)
 
         menu.addItem(.separator())
 
         let permissions = permissionsService.snapshot()
-        addPermissionActionItem(
-            to: menu,
-            status: permissions.screenRecording,
-            missingActionTitle: "Grant Screen Recording…",
-            grantedActionTitle: "Open Screen Recording Settings…",
-            action: #selector(requestScreenRecording)
-        )
-        addPermissionActionItem(
-            to: menu,
-            status: permissions.accessibility,
-            missingActionTitle: "Grant Accessibility…",
-            grantedActionTitle: "Open Accessibility Settings…",
-            action: #selector(requestAccessibility)
-        )
-        addPermissionActionItem(
-            to: menu,
-            status: permissions.inputMonitoring,
-            missingActionTitle: "Open Input Monitoring Settings…",
-            grantedActionTitle: "Open Input Monitoring Settings…",
-            action: #selector(openInputMonitoringSettings)
-        )
+        // Each of these is skipped when the permission is already granted, so the leading
+        // separator has to be conditional too. Otherwise a fully permitted app shows two
+        // separators back to back (AppKit does not collapse adjacent separators).
+        let permissionItems = [
+            permissionActionItem(
+                status: permissions.screenRecording,
+                title: "Grant Screen Recording…",
+                symbolName: "rectangle.inset.filled.badge.record",
+                action: #selector(requestScreenRecording)
+            ),
+            permissionActionItem(
+                status: permissions.accessibility,
+                title: "Grant Accessibility…",
+                symbolName: "accessibility",
+                action: #selector(requestAccessibility)
+            ),
+            permissionActionItem(
+                status: permissions.inputMonitoring,
+                title: "Open Input Monitoring Settings…",
+                symbolName: "keyboard.badge.ellipsis",
+                action: #selector(openInputMonitoringSettings)
+            )
+        ].compactMap { $0 }
+
+        if !permissionItems.isEmpty {
+            menu.addItem(.separator())
+            permissionItems.forEach(menu.addItem)
+        }
 
         menu.addItem(.separator())
 
@@ -96,6 +104,7 @@ final class StatusItemController: NSObject {
         launchAtStartup.target = self
         launchAtStartup.isEnabled = true
         launchAtStartup.state = isLaunchAtStartupEnabled ? .on : .off
+        launchAtStartup.image = Self.menuIcon(named: "power")
         menu.addItem(launchAtStartup)
 
         menu.addItem(.separator())
@@ -103,6 +112,7 @@ final class StatusItemController: NSObject {
         let quitItem = NSMenuItem(title: "Quit ZoomIt for Mac", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         quitItem.isEnabled = true
+        quitItem.image = Self.menuIcon(named: "xmark.circle")
         menu.addItem(quitItem)
 
         statusItem.menu = menu
@@ -142,9 +152,43 @@ final class StatusItemController: NSObject {
         item.keyEquivalentModifierMask = modifierFlags(for: binding.modifiers)
         item.target = self
         item.isEnabled = true
+        item.image = Self.menuIcon(named: Self.symbolName(for: action))
         // Enums don't bridge to Objective-C, so round-trip through the raw value instead.
         item.representedObject = action.rawValue
         return item
+    }
+
+    /// SF Symbol per feature. An exhaustive switch (rather than a dictionary) makes the
+    /// compiler flag any newly added `ShortcutAction` that still needs an icon.
+    private static func symbolName(for action: ShortcutAction) -> String {
+        switch action {
+        case .zoom: "plus.magnifyingglass"
+        case .liveZoom: "magnifyingglass.circle"
+        case .draw: "pencil"
+        case .liveDraw: "pencil.circle"
+        case .record: "record.circle"
+        case .cropRecord: "crop"
+        case .windowRecord: "macwindow"
+        case .snip: "camera.viewfinder"
+        case .saveSnip: "square.and.arrow.down"
+        case .ocrSnip: "text.viewfinder"
+        case .panorama: "pano"
+        case .savePanorama: "square.and.arrow.down.on.square"
+        case .demoType: "keyboard"
+        case .previousDemoType: "arrow.uturn.backward"
+        case .breakTimer: "timer"
+        }
+    }
+
+    /// Menu icons are template images so AppKit tints them for light/dark mode and for the
+    /// highlighted row. Returns nil for an unavailable symbol, which just renders the item
+    /// without an icon rather than failing.
+    private static func menuIcon(named symbolName: String) -> NSImage? {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        image?.isTemplate = true
+        return image
     }
 
     /// macOS HIG: a command that needs more input before it can finish gets a trailing
@@ -175,18 +219,18 @@ final class StatusItemController: NSObject {
         return flags
     }
 
-    private func addPermissionActionItem(
-        to menu: NSMenu,
+    private func permissionActionItem(
         status: PermissionStatus,
-        missingActionTitle: String,
-        grantedActionTitle: String,
+        title: String,
+        symbolName: String,
         action: Selector
-    ) {
-        guard status != .granted else { return }
-        let item = NSMenuItem(title: missingActionTitle, action: action, keyEquivalent: "")
+    ) -> NSMenuItem? {
+        guard status != .granted else { return nil }
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         item.isEnabled = true
-        menu.addItem(item)
+        item.image = Self.menuIcon(named: symbolName)
+        return item
     }
 
     private func makeStatusItemImage() -> NSImage? {
