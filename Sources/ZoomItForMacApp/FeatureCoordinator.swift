@@ -14,6 +14,7 @@ final class FeatureCoordinator {
     private let recordingController: RecordingController
     private let snipController: SnipController
     private let panoramaController: PanoramaController
+    private var demoMirrorController: DemoMirrorController?
 
     init(
         shortcutStore: ShortcutStore,
@@ -22,7 +23,8 @@ final class FeatureCoordinator {
         screenCaptureService: ScreenCaptureService,
         clipboardService: ClipboardService,
         ocrService: OCRService,
-        onPanoramaActivityChanged: @escaping (Bool) -> Void = { _ in }
+        onPanoramaActivityChanged: @escaping (Bool) -> Void = { _ in },
+        onDemoMirrorActivityChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.shortcutStore = shortcutStore
         self.settingsStore = settingsStore
@@ -57,6 +59,17 @@ final class FeatureCoordinator {
             clipboardService: clipboardService,
             settingsStore: settingsStore,
             onActivityChanged: onPanoramaActivityChanged
+        )
+        self.demoMirrorController = DemoMirrorController(
+            settingsStore: settingsStore,
+            screenCaptureService: screenCaptureService,
+            onActivityChanged: onDemoMirrorActivityChanged,
+            onError: { [weak self] error in
+                self?.presentFeatureError(
+                    title: "Demo Mirror failed",
+                    message: error.localizedDescription
+                )
+            }
         )
         self.drawOverlayController.onShortcutAction = { [weak self] action in
             self?.trigger(action)
@@ -102,6 +115,31 @@ final class FeatureCoordinator {
 
         if action == .previousDemoType {
             demoTypeController.moveToPreviousSnippet()
+            return
+        }
+
+        if action == .demoMirror || action == .demoMirrorRegion || action == .demoMirrorWindow {
+            if demoMirrorController?.isRunning == true {
+                demoMirrorController?.stop()
+                return
+            }
+            guard permissions.screenRecording == .granted else {
+                presentMissingPermissionAlert(for: action, permissions: permissions)
+                return
+            }
+
+            let scope: DemoMirrorScope
+            switch action {
+            case .demoMirror:
+                scope = .screen
+            case .demoMirrorRegion:
+                scope = .region
+            case .demoMirrorWindow:
+                scope = .window
+            default:
+                return
+            }
+            demoMirrorController?.toggle(scope: scope)
             return
         }
 
@@ -251,6 +289,7 @@ final class FeatureCoordinator {
         drawOverlayController.dismiss()
         recordingController.cancel()
         panoramaController.cancel()
+        demoMirrorController?.stop()
     }
 
     func stopPanoramaCapture() {
@@ -293,6 +332,17 @@ final class FeatureCoordinator {
 
         let alert = NSAlert()
         alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func presentFeatureError(title: String, message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "OK")

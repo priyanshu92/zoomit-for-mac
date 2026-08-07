@@ -72,6 +72,10 @@ private func snipEventTapCallback(
     // keyCode 28 = "8" key — panorama
     case (28, false, false): action = .panorama; needsScreenCapture = false
     case (28, true, false):  action = .savePanorama; needsScreenCapture = false
+    // keyCode 25 = "9" key — Demo Mirror variants
+    case (25, false, false): action = .demoMirror; needsScreenCapture = false
+    case (25, true, false):  action = .demoMirrorRegion; needsScreenCapture = false
+    case (25, false, true):  action = .demoMirrorWindow; needsScreenCapture = false
     default: return Unmanaged.passUnretained(event)
     }
 
@@ -121,6 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onPanoramaActivityChanged: { [weak self] isActive in
             panoramaEventTapIsActive = isActive
             self?.statusController?.setPanoramaActive(isActive)
+        },
+        onDemoMirrorActivityChanged: { [weak self] isActive in
+            self?.statusController?.setDemoMirrorActive(isActive)
         }
     )
 
@@ -137,7 +144,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKeys.handler = { [weak self] action in
                 // Skip actions handled by the CGEvent tap to avoid double-firing
                 if tapIsActive {
-                    let eventTapActions: Set<ShortcutAction> = [.draw, .snip, .saveSnip, .ocrSnip, .panorama, .savePanorama]
+                    let eventTapActions: Set<ShortcutAction> = [
+                        .draw,
+                        .snip,
+                        .saveSnip,
+                        .ocrSnip,
+                        .panorama,
+                        .savePanorama,
+                        .demoMirror,
+                        .demoMirrorRegion,
+                        .demoMirrorWindow,
+                    ]
                     guard !eventTapActions.contains(action) else { return }
                 }
                 DispatchQueue.main.async {

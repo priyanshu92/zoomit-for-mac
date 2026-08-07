@@ -12,6 +12,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var annotationFontSize: Double
     public var demoTypeText: String
     public var demoTypeCharactersPerTick: Int
+    public var demoMirrorTrackWindowRegion: Bool
+    public var demoMirrorTargetDisplayID: UInt32?
 
     public init(
         initialZoomFactor: Double,
@@ -23,7 +25,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         screenshotSaveLocation: String,
         annotationFontSize: Double,
         demoTypeText: String,
-        demoTypeCharactersPerTick: Int
+        demoTypeCharactersPerTick: Int,
+        demoMirrorTrackWindowRegion: Bool = true,
+        demoMirrorTargetDisplayID: UInt32? = nil
     ) {
         self.initialZoomFactor = initialZoomFactor
         self.breakDurationMinutes = breakDurationMinutes
@@ -35,6 +39,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.annotationFontSize = annotationFontSize
         self.demoTypeText = demoTypeText
         self.demoTypeCharactersPerTick = demoTypeCharactersPerTick
+        self.demoMirrorTrackWindowRegion = demoMirrorTrackWindowRegion
+        self.demoMirrorTargetDisplayID = demoMirrorTargetDisplayID
     }
 
     public static var `default`: AppSettings {
@@ -60,10 +66,66 @@ public struct AppSettings: Codable, Equatable, Sendable {
             - Ctrl+6 Snip
             - Ctrl+7 DemoType
             - Ctrl+8 Panorama Snip
+            - Ctrl+9 Demo Mirror
             - Ctrl+Alt+6 OCR Snip
             """,
-            demoTypeCharactersPerTick: 2
+            demoTypeCharactersPerTick: 2,
+            demoMirrorTrackWindowRegion: true,
+            demoMirrorTargetDisplayID: nil
         )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case initialZoomFactor
+        case breakDurationMinutes
+        case breakOpacity
+        case recordingFramesPerSecond
+        case recordingScale
+        case recordingSaveLocation
+        case screenshotSaveLocation
+        case annotationFontSize
+        case demoTypeText
+        case demoTypeCharactersPerTick
+        case demoMirrorTrackWindowRegion
+        case demoMirrorTargetDisplayID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        initialZoomFactor = try values.decode(Double.self, forKey: .initialZoomFactor)
+        breakDurationMinutes = try values.decode(Int.self, forKey: .breakDurationMinutes)
+        breakOpacity = try values.decode(Double.self, forKey: .breakOpacity)
+        recordingFramesPerSecond = try values.decode(Double.self, forKey: .recordingFramesPerSecond)
+        recordingScale = try values.decode(Double.self, forKey: .recordingScale)
+        recordingSaveLocation = try values.decode(String.self, forKey: .recordingSaveLocation)
+        screenshotSaveLocation = try values.decode(String.self, forKey: .screenshotSaveLocation)
+        annotationFontSize = try values.decode(Double.self, forKey: .annotationFontSize)
+        demoTypeText = try values.decode(String.self, forKey: .demoTypeText)
+        demoTypeCharactersPerTick = try values.decode(Int.self, forKey: .demoTypeCharactersPerTick)
+        demoMirrorTrackWindowRegion = try values.decodeIfPresent(
+            Bool.self,
+            forKey: .demoMirrorTrackWindowRegion
+        ) ?? true
+        demoMirrorTargetDisplayID = try values.decodeIfPresent(
+            UInt32.self,
+            forKey: .demoMirrorTargetDisplayID
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(initialZoomFactor, forKey: .initialZoomFactor)
+        try values.encode(breakDurationMinutes, forKey: .breakDurationMinutes)
+        try values.encode(breakOpacity, forKey: .breakOpacity)
+        try values.encode(recordingFramesPerSecond, forKey: .recordingFramesPerSecond)
+        try values.encode(recordingScale, forKey: .recordingScale)
+        try values.encode(recordingSaveLocation, forKey: .recordingSaveLocation)
+        try values.encode(screenshotSaveLocation, forKey: .screenshotSaveLocation)
+        try values.encode(annotationFontSize, forKey: .annotationFontSize)
+        try values.encode(demoTypeText, forKey: .demoTypeText)
+        try values.encode(demoTypeCharactersPerTick, forKey: .demoTypeCharactersPerTick)
+        try values.encode(demoMirrorTrackWindowRegion, forKey: .demoMirrorTrackWindowRegion)
+        try values.encodeIfPresent(demoMirrorTargetDisplayID, forKey: .demoMirrorTargetDisplayID)
     }
 }
 

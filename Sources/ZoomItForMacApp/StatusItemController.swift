@@ -20,6 +20,8 @@ final class StatusItemController: NSObject {
     private let permissionsService: PermissionsService
     private weak var delegate: StatusItemControllerDelegate?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private var isPanoramaActive = false
+    private var isDemoMirrorActive = false
 
     init(
         shortcutStore: ShortcutStore,
@@ -119,8 +121,13 @@ final class StatusItemController: NSObject {
     }
 
     func setPanoramaActive(_ isActive: Bool) {
-        guard let button = statusItem.button else { return }
-        button.toolTip = isActive ? "ZoomIt Panorama is recording. Press Esc or Ctrl+8 to finish." : "ZoomIt"
+        isPanoramaActive = isActive
+        updateStatusToolTip()
+    }
+
+    func setDemoMirrorActive(_ isActive: Bool) {
+        isDemoMirrorActive = isActive
+        updateStatusToolTip()
     }
 
     private var isLaunchAtStartupEnabled: Bool {
@@ -177,6 +184,9 @@ final class StatusItemController: NSObject {
         case .demoType: "keyboard"
         case .previousDemoType: "arrow.uturn.backward"
         case .breakTimer: "timer"
+        case .demoMirror: "rectangle.on.rectangle"
+        case .demoMirrorRegion: "rectangle.inset.filled"
+        case .demoMirrorWindow: "macwindow.on.rectangle"
         }
     }
 
@@ -195,10 +205,23 @@ final class StatusItemController: NSObject {
     /// ellipsis. These actions all ask the user to pick a region or a window first.
     private func menuTitle(for action: ShortcutAction) -> String {
         switch action {
-        case .snip, .saveSnip, .ocrSnip, .cropRecord, .windowRecord, .panorama, .savePanorama:
+        case .snip, .saveSnip, .ocrSnip, .cropRecord, .windowRecord, .panorama,
+             .savePanorama, .demoMirrorRegion, .demoMirrorWindow:
             return "\(action.title)…"
-        case .zoom, .liveZoom, .draw, .liveDraw, .record, .demoType, .previousDemoType, .breakTimer:
+        case .zoom, .liveZoom, .draw, .liveDraw, .record, .demoType, .previousDemoType,
+             .breakTimer, .demoMirror:
             return action.title
+        }
+    }
+
+    private func updateStatusToolTip() {
+        guard let button = statusItem.button else { return }
+        if isDemoMirrorActive {
+            button.toolTip = "ZoomIt Demo Mirror is active. Press Ctrl+9 to stop."
+        } else if isPanoramaActive {
+            button.toolTip = "ZoomIt Panorama is recording. Press Esc or Ctrl+8 to finish."
+        } else {
+            button.toolTip = "ZoomIt"
         }
     }
 

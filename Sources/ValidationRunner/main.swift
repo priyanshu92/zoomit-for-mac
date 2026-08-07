@@ -10,9 +10,11 @@ enum ValidationRunner {
         try validateShortcutStoreFallbacks()
         try validateShortcutStorePersistence()
         try validateAppSettingsPersistence()
+        try validateLegacyAppSettingsMigration()
         try validateAppSettingsReset()
         try validateDerivedAppSettings()
         try validateCaptureGeometry()
+        try validateDemoMirrorGeometry()
         try validateCursorGeometry()
         try validateDisplayCoordinateConversion()
         try validateRecordingFrameRange()
@@ -36,6 +38,9 @@ enum ValidationRunner {
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.ocrSnip]?.windowsStyleDescription == "Ctrl+Alt+6", "OCR snip shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.panorama]?.windowsStyleDescription == "Ctrl+8", "Panorama shortcut mismatch")
         try expect(ShortcutCatalog.windowsEquivalentDefaults[.savePanorama]?.windowsStyleDescription == "Ctrl+Shift+8", "Save Panorama shortcut mismatch")
+        try expect(ShortcutCatalog.windowsEquivalentDefaults[.demoMirror]?.windowsStyleDescription == "Ctrl+9", "Demo Mirror shortcut mismatch")
+        try expect(ShortcutCatalog.windowsEquivalentDefaults[.demoMirrorRegion]?.windowsStyleDescription == "Ctrl+Shift+9", "Demo Mirror region shortcut mismatch")
+        try expect(ShortcutCatalog.windowsEquivalentDefaults[.demoMirrorWindow]?.windowsStyleDescription == "Ctrl+Alt+9", "Demo Mirror window shortcut mismatch")
     }
 
     private static func validateMenuActionGroups() throws {
@@ -98,12 +103,37 @@ enum ValidationRunner {
         settings.recordingScale = 1.5
         settings.breakDurationMinutes = 15
         settings.initialZoomFactor = 2.5
+        settings.demoMirrorTrackWindowRegion = false
+        settings.demoMirrorTargetDisplayID = 42
         try store.save(settings)
 
         let reloaded = store.load()
         try expect(reloaded.recordingScale == 1.5, "Recording scale did not persist")
         try expect(reloaded.breakDurationMinutes == 15, "Break duration did not persist")
         try expect(reloaded.initialZoomFactor == 2.5, "Zoom factor did not persist")
+        try expect(!reloaded.demoMirrorTrackWindowRegion, "Demo Mirror tracking setting did not persist")
+        try expect(reloaded.demoMirrorTargetDisplayID == 42, "Demo Mirror target display did not persist")
+    }
+
+    private static func validateLegacyAppSettingsMigration() throws {
+        let legacySettings: [String: Any] = [
+            "initialZoomFactor": 3.0,
+            "breakDurationMinutes": 12,
+            "breakOpacity": 0.75,
+            "recordingFramesPerSecond": 8.0,
+            "recordingScale": 1.0,
+            "recordingSaveLocation": "Recordings",
+            "screenshotSaveLocation": "Screenshots",
+            "annotationFontSize": 24.0,
+            "demoTypeText": "Legacy DemoType",
+            "demoTypeCharactersPerTick": 3,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: legacySettings)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+
+        try expect(decoded.initialZoomFactor == 3, "Legacy settings values should be preserved")
+        try expect(decoded.demoMirrorTrackWindowRegion, "Legacy settings should enable tracked window regions")
+        try expect(decoded.demoMirrorTargetDisplayID == nil, "Legacy settings should use automatic target display selection")
     }
 
     private static func validateAppSettingsReset() throws {
@@ -196,6 +226,37 @@ enum ValidationRunner {
             scaleFactor: 2
         )
         try expect(outsideRect == nil, "Cursor outside the captured screen should be ignored")
+    }
+
+    private static func validateDemoMirrorGeometry() throws {
+        let target = CGRect(x: 1920, y: 0, width: 1920, height: 1200)
+        let fitted = DemoMirrorGeometry.fittedRect(
+            contentSize: CGSize(width: 1920, height: 1080),
+            in: target
+        )
+        try expect(
+            fitted == CGRect(x: 1920, y: 60, width: 1920, height: 1080),
+            "Demo Mirror should letterbox content on the target display"
+        )
+
+        let displayFrame = CGRect(x: 100, y: 200, width: 1000, height: 800)
+        let appKitSelection = CGRect(x: 250, y: 300, width: 200, height: 120)
+        try expect(
+            DemoMirrorGeometry.displayLocalRect(
+                fromAppKitGlobal: appKitSelection,
+                displayFrame: displayFrame
+            ) == CGRect(x: 150, y: 580, width: 200, height: 120),
+            "Demo Mirror region should convert to top-left display coordinates"
+        )
+
+        try expect(
+            DemoMirrorGeometry.displayLocalRect(
+                fromQuartzGlobal: CGRect(x: 100, y: 200, width: 400, height: 300),
+                displayFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                primaryDisplayHeight: 1080
+            ) == CGRect(x: 100, y: 200, width: 400, height: 300),
+            "Demo Mirror window geometry should preserve Quartz-local coordinates"
+        )
     }
 
     private static func validateDisplayCoordinateConversion() throws {

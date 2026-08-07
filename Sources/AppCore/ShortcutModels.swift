@@ -16,6 +16,9 @@ public enum ShortcutAction: String, CaseIterable, Codable, Hashable, Sendable {
     case ocrSnip
     case panorama
     case savePanorama
+    case demoMirror
+    case demoMirrorRegion
+    case demoMirrorWindow
 
     public var title: String {
         switch self {
@@ -34,6 +37,9 @@ public enum ShortcutAction: String, CaseIterable, Codable, Hashable, Sendable {
         case .ocrSnip: "OCR Snip"
         case .panorama: "Panorama"
         case .savePanorama: "Save Panorama"
+        case .demoMirror: "Demo Mirror"
+        case .demoMirrorRegion: "Demo Mirror Region"
+        case .demoMirrorWindow: "Demo Mirror Window"
         }
     }
 }
@@ -159,6 +165,9 @@ public enum ShortcutCatalog {
         .ocrSnip: .init(key: "6", keyCode: 22, modifiers: [.control, .option]),
         .panorama: .init(key: "8", keyCode: 28, modifiers: [.control]),
         .savePanorama: .init(key: "8", keyCode: 28, modifiers: [.control, .shift]),
+        .demoMirror: .init(key: "9", keyCode: 25, modifiers: [.control]),
+        .demoMirrorRegion: .init(key: "9", keyCode: 25, modifiers: [.control, .shift]),
+        .demoMirrorWindow: .init(key: "9", keyCode: 25, modifiers: [.control, .option]),
     ]
 
     public static var orderedDefaults: [(ShortcutAction, ShortcutBinding)] {
@@ -177,6 +186,7 @@ public enum ShortcutCatalog {
         [.record, .cropRecord, .windowRecord],
         [.snip, .saveSnip, .ocrSnip],
         [.panorama, .savePanorama],
+        [.demoMirror, .demoMirrorRegion, .demoMirrorWindow],
         [.demoType, .previousDemoType],
         [.breakTimer]
     ]

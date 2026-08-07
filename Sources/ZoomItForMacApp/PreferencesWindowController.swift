@@ -11,6 +11,7 @@ protocol PreferencesWindowControllerDelegate: AnyObject {
 private enum PreferencesSection: Int, CaseIterable {
     case general
     case recording
+    case demoMirror
     case shortcuts
     case permissions
 
@@ -18,6 +19,7 @@ private enum PreferencesSection: Int, CaseIterable {
         switch self {
         case .general: "General"
         case .recording: "Recording"
+        case .demoMirror: "Demo Mirror"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         }
@@ -27,6 +29,7 @@ private enum PreferencesSection: Int, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .recording: "record.circle"
+        case .demoMirror: "rectangle.on.rectangle"
         case .shortcuts: "keyboard"
         case .permissions: "lock.shield"
         }
@@ -57,6 +60,12 @@ final class PreferencesWindowController: NSWindowController {
     private let recordingDirectoryField = NSTextField()
     private let screenshotDirectoryField = NSTextField()
     private let demoTypeSpeedField = NSTextField()
+    private let demoMirrorTargetDisplayPopup = NSPopUpButton()
+    private let demoMirrorTrackWindowCheckbox = NSButton(
+        checkboxWithTitle: "Include ZoomIt overlays and overlapping windows",
+        target: nil,
+        action: nil
+    )
     private let feedbackLabel = NSTextField(labelWithString: "")
     private let screenRecordingStatusLabel = NSTextField(labelWithString: "")
     private let accessibilityStatusLabel = NSTextField(labelWithString: "")
@@ -131,6 +140,8 @@ final class PreferencesWindowController: NSWindowController {
         recordingDirectoryField.stringValue = settings.recordingSaveLocation
         screenshotDirectoryField.stringValue = settings.screenshotSaveLocation
         demoTypeSpeedField.stringValue = "\(settings.demoTypeCharactersPerTick)"
+        demoMirrorTrackWindowCheckbox.state = settings.demoMirrorTrackWindowRegion ? .on : .off
+        populateDemoMirrorTargetDisplays(selectedID: settings.demoMirrorTargetDisplayID)
 
         for action in ShortcutAction.allCases {
             shortcutFields[action]?.stringValue = bindings[action]?.windowsStyleDescription ?? ""
@@ -224,6 +235,7 @@ final class PreferencesWindowController: NSWindowController {
         sectionViews = [
             .general: buildGeneralSection(),
             .recording: buildRecordingSection(),
+            .demoMirror: buildDemoMirrorSection(),
             .shortcuts: buildShortcutsSection(),
             .permissions: buildPermissionsSection(),
         ]
@@ -386,6 +398,39 @@ final class PreferencesWindowController: NSWindowController {
         return container
     }
 
+    private func buildDemoMirrorSection() -> NSView {
+        let container = FlippedView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        let stack = makeSectionStack(in: container)
+
+        addFullWidth(makeSectionTitle("Demo Mirror"), to: stack)
+
+        let explanation = NSTextField(
+            wrappingLabelWithString: "Mirror the screen, a selected region, or the window under the pointer onto a second display while keeping control of the source display."
+        )
+        explanation.textColor = .secondaryLabelColor
+        explanation.font = .systemFont(ofSize: 12)
+        addFullWidth(explanation, to: stack)
+
+        addFullWidth(makeGroupCard(
+            header: "TARGET DISPLAY",
+            rows: [
+                makeSettingsRow(label: "Presentation display", control: demoMirrorTargetDisplayPopup),
+            ],
+            footer: "Automatic uses the first connected display other than the source."
+        ), to: stack)
+
+        addFullWidth(makeGroupCard(
+            header: "WINDOW MIRRORING",
+            rows: [
+                makeSettingsRow(label: "Track window region", control: demoMirrorTrackWindowCheckbox),
+            ],
+            footer: "When enabled, ZoomIt drawing and zoom overlays appear in the mirror. Disable it to capture the window surface without overlapping content."
+        ), to: stack)
+
+        return container
+    }
+
     private func buildShortcutsSection() -> NSView {
         let container = FlippedView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -417,7 +462,7 @@ final class PreferencesWindowController: NSWindowController {
 
         addFullWidth(makeSectionTitle("Permissions"), to: stack)
 
-        let helpLabel = NSTextField(wrappingLabelWithString: "Enable the items below to make recording, shortcuts, and overlays work reliably.")
+        let helpLabel = NSTextField(wrappingLabelWithString: "Enable the items below to make recording, Demo Mirror, shortcuts, and overlays work reliably.")
         helpLabel.textColor = .secondaryLabelColor
         helpLabel.font = .systemFont(ofSize: 12)
         addFullWidth(helpLabel, to: stack)
@@ -810,7 +855,33 @@ final class PreferencesWindowController: NSWindowController {
             fieldName: "DemoType speed",
             minimum: 1
         )
+        settings.demoMirrorTrackWindowRegion = demoMirrorTrackWindowCheckbox.state == .on
+        settings.demoMirrorTargetDisplayID = (
+            demoMirrorTargetDisplayPopup.selectedItem?.representedObject as? NSNumber
+        )?.uint32Value
         return settings
+    }
+
+    private func populateDemoMirrorTargetDisplays(selectedID: UInt32?) {
+        demoMirrorTargetDisplayPopup.removeAllItems()
+        demoMirrorTargetDisplayPopup.addItem(withTitle: "Automatic")
+
+        for screen in NSScreen.screens {
+            guard
+                let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                    as? CGDirectDisplayID
+            else {
+                continue
+            }
+            let size = screen.frame.size
+            demoMirrorTargetDisplayPopup.addItem(
+                withTitle: "\(screen.localizedName) (\(Int(size.width)) × \(Int(size.height)))"
+            )
+            demoMirrorTargetDisplayPopup.lastItem?.representedObject = NSNumber(value: displayID)
+            if displayID == selectedID {
+                demoMirrorTargetDisplayPopup.select(demoMirrorTargetDisplayPopup.lastItem)
+            }
+        }
     }
 
     private func parsedShortcutBindings() throws -> [ShortcutAction: ShortcutBinding] {

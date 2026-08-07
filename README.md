@@ -24,11 +24,14 @@ A native macOS menu bar app that brings [Sysinternals ZoomIt](https://learn.micr
 | DemoType | `Ctrl+7` | Simulated typing from clipboard (prefix text with `[start]`). |
 | Panorama | `Ctrl+8` | Select a region, scroll the page, then press `Esc` or `Ctrl+8` again to stitch the captures into one image and copy it to the clipboard. |
 | Save Panorama | `Ctrl+Shift+8` | Same as Panorama, but writes the stitched image to a PNG via save dialog. |
+| Demo Mirror | `Ctrl+9` | Mirror the source display onto a second display. |
+| Demo Mirror Region | `Ctrl+Shift+9` | Select a region to mirror onto a second display. |
+| Demo Mirror Window | `Ctrl+Alt+9` | Mirror the window under the pointer onto a second display. |
 
 ### Menu Bar
 
 Every feature is also listed in the menu bar icon's menu, so you can click an item instead of remembering its shortcut.
-Items are grouped by feature (zoom, draw, record, snip, panorama, DemoType, break timer) and each one shows its current shortcut on the right, including any you have customized in Preferences.
+Items are grouped by feature (zoom, draw, record, snip, panorama, Demo Mirror, DemoType, break timer) and each one shows its current shortcut on the right, including any you have customized in Preferences.
 
 ### Draw Mode Tools
 
@@ -58,6 +61,16 @@ Copy text to your clipboard with a `[start]` prefix, then press `Ctrl+7`:
 ```
 
 Press `Esc` to stop mid-typing. Press `Ctrl+7` again to restart.
+
+### Demo Mirror
+
+Connect a second display, then press `Ctrl+9` to mirror the display containing the pointer.
+Use `Ctrl+Shift+9` to select a region or `Ctrl+Alt+9` to mirror the window under the pointer.
+The mirrored view includes the pointer and stays above presentation or slide-show windows.
+Press any Demo Mirror shortcut again to stop.
+
+Preferences lets you choose the presentation display.
+Tracked window regions include ZoomIt drawing and zoom overlays; disable tracking to mirror the window surface without overlapping content.
 
 ### Panorama
 
