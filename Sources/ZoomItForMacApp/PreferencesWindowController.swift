@@ -45,6 +45,7 @@ final class PreferencesWindowController: NSWindowController {
     private let shortcutStore: ShortcutStore
     private let settingsStore: AppSettingsStore
     private let permissionsService: PermissionsService
+    private let screenCaptureService: ScreenCaptureService
     private weak var delegate: PreferencesWindowControllerDelegate?
 
     // Sidebar & detail
@@ -60,12 +61,15 @@ final class PreferencesWindowController: NSWindowController {
     private let recordingDirectoryField = NSTextField()
     private let screenshotDirectoryField = NSTextField()
     private let demoTypeSpeedField = NSTextField()
-    private let demoMirrorTargetDisplayPopup = NSPopUpButton()
+    private let demoMirrorTargetDisplayContainer = NSView()
     private let demoMirrorTrackWindowCheckbox = NSButton(
         checkboxWithTitle: "Include ZoomIt overlays and overlapping windows",
         target: nil,
         action: nil
     )
+    private var demoMirrorTargetButtons: [DisplayPreviewButton] = []
+    private var selectedDemoMirrorTargetDisplayID: CGDirectDisplayID?
+    private var screenParametersObserver: NSObjectProtocol?
     private let feedbackLabel = NSTextField(labelWithString: "")
     private let screenRecordingStatusLabel = NSTextField(labelWithString: "")
     private let accessibilityStatusLabel = NSTextField(labelWithString: "")
@@ -79,11 +83,13 @@ final class PreferencesWindowController: NSWindowController {
         shortcutStore: ShortcutStore,
         settingsStore: AppSettingsStore,
         permissionsService: PermissionsService,
+        screenCaptureService: ScreenCaptureService,
         delegate: PreferencesWindowControllerDelegate
     ) {
         self.shortcutStore = shortcutStore
         self.settingsStore = settingsStore
         self.permissionsService = permissionsService
+        self.screenCaptureService = screenCaptureService
         self.delegate = delegate
 
         let contentRect = NSRect(x: 0, y: 0, width: 820, height: 620)
@@ -110,6 +116,7 @@ final class PreferencesWindowController: NSWindowController {
         loadPersistedValuesIntoForm()
         refresh()
         selectSection(.general)
+        observeScreenConfiguration()
     }
 
     @available(*, unavailable)
@@ -119,6 +126,11 @@ final class PreferencesWindowController: NSWindowController {
 
     func refresh() {
         refreshPermissionsUI()
+    }
+
+    override func showWindow(_ sender: Any?) {
+        refreshDemoMirrorTargetDisplays(announceDisconnectedSelection: true)
+        super.showWindow(sender)
     }
 
     func showPermissions() {
@@ -141,7 +153,8 @@ final class PreferencesWindowController: NSWindowController {
         screenshotDirectoryField.stringValue = settings.screenshotSaveLocation
         demoTypeSpeedField.stringValue = "\(settings.demoTypeCharactersPerTick)"
         demoMirrorTrackWindowCheckbox.state = settings.demoMirrorTrackWindowRegion ? .on : .off
-        populateDemoMirrorTargetDisplays(selectedID: settings.demoMirrorTargetDisplayID)
+        selectedDemoMirrorTargetDisplayID = settings.demoMirrorTargetDisplayID
+        refreshDemoMirrorTargetDisplays(announceDisconnectedSelection: false)
 
         for action in ShortcutAction.allCases {
             shortcutFields[action]?.stringValue = bindings[action]?.windowsStyleDescription ?? ""
@@ -415,9 +428,9 @@ final class PreferencesWindowController: NSWindowController {
         addFullWidth(makeGroupCard(
             header: "TARGET DISPLAY",
             rows: [
-                makeSettingsRow(label: "Presentation display", control: demoMirrorTargetDisplayPopup),
+                demoMirrorTargetDisplayContainer,
             ],
-            footer: "Automatic uses the first connected display other than the source."
+            footer: "Choose where Demo Mirror appears. Automatic uses the first connected display other than the source."
         ), to: stack)
 
         addFullWidth(makeGroupCard(
@@ -856,32 +869,116 @@ final class PreferencesWindowController: NSWindowController {
             minimum: 1
         )
         settings.demoMirrorTrackWindowRegion = demoMirrorTrackWindowCheckbox.state == .on
-        settings.demoMirrorTargetDisplayID = (
-            demoMirrorTargetDisplayPopup.selectedItem?.representedObject as? NSNumber
-        )?.uint32Value
+        settings.demoMirrorTargetDisplayID = selectedDemoMirrorTargetDisplayID
         return settings
     }
 
-    private func populateDemoMirrorTargetDisplays(selectedID: UInt32?) {
-        demoMirrorTargetDisplayPopup.removeAllItems()
-        demoMirrorTargetDisplayPopup.addItem(withTitle: "Automatic")
+    private func observeScreenConfiguration() {
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard self?.window?.isVisible == true else { return }
+                self?.refreshDemoMirrorTargetDisplays(announceDisconnectedSelection: true)
+            }
+        }
+    }
 
-        for screen in NSScreen.screens {
+    private func refreshDemoMirrorTargetDisplays(announceDisconnectedSelection: Bool) {
+        let screens = NSScreen.screens.compactMap { screen -> (NSScreen, CGDirectDisplayID)? in
             guard
                 let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
                     as? CGDirectDisplayID
             else {
-                continue
+                return nil
             }
-            let size = screen.frame.size
-            demoMirrorTargetDisplayPopup.addItem(
-                withTitle: "\(screen.localizedName) (\(Int(size.width)) × \(Int(size.height)))"
-            )
-            demoMirrorTargetDisplayPopup.lastItem?.representedObject = NSNumber(value: displayID)
-            if displayID == selectedID {
-                demoMirrorTargetDisplayPopup.select(demoMirrorTargetDisplayPopup.lastItem)
-            }
+            return (screen, displayID)
         }
+        let availableIDs = screens.map(\.1)
+        let previousSelection = selectedDemoMirrorTargetDisplayID
+        selectedDemoMirrorTargetDisplayID = DemoMirrorGeometry.reconciledTargetDisplayID(
+            previousSelection,
+            availableDisplayIDs: availableIDs
+        )
+
+        if
+            announceDisconnectedSelection,
+            previousSelection != nil,
+            selectedDemoMirrorTargetDisplayID == nil
+        {
+            setFeedback("The selected display disconnected. Automatic is selected; click Save Changes to apply.")
+        }
+
+        let snapshotsByDisplayID = Dictionary(
+            uniqueKeysWithValues: screenCaptureService.captureAllScreens().map {
+                ($0.displayID, NSImage(cgImage: $0.image, size: $0.screenFrame.size))
+            }
+        )
+
+        demoMirrorTargetDisplayContainer.subviews.forEach { $0.removeFromSuperview() }
+        demoMirrorTargetButtons.removeAll()
+
+        var buttons = [
+            DisplayPreviewButton(
+                displayID: nil,
+                name: "Automatic",
+                detail: "First available target",
+                previewImage: NSImage(
+                    systemSymbolName: "rectangle.on.rectangle.angled",
+                    accessibilityDescription: nil
+                )
+            )
+        ]
+        buttons.append(contentsOf: screens.map { screen, displayID in
+            let size = screen.frame.size
+            return DisplayPreviewButton(
+                displayID: displayID,
+                name: screen.localizedName,
+                detail: "\(Int(size.width)) × \(Int(size.height))",
+                previewImage: snapshotsByDisplayID[displayID]
+            )
+        })
+
+        for button in buttons {
+            button.target = self
+            button.action = #selector(selectDemoMirrorTarget(_:))
+            button.setSelected(button.displayID == selectedDemoMirrorTargetDisplayID)
+        }
+        demoMirrorTargetButtons = buttons
+
+        let rows = stride(from: 0, to: buttons.count, by: 2).map { index -> [NSView] in
+            let first = buttons[index]
+            if buttons.indices.contains(index + 1) {
+                return [first, buttons[index + 1]]
+            }
+            return [first, NSView()]
+        }
+        let grid = NSGridView(views: rows)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 12
+        grid.columnSpacing = 12
+        grid.xPlacement = .fill
+        grid.yPlacement = .fill
+        grid.column(at: 0).width = 240
+        grid.column(at: 1).width = 240
+
+        demoMirrorTargetDisplayContainer.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.topAnchor.constraint(equalTo: demoMirrorTargetDisplayContainer.topAnchor, constant: 12),
+            grid.leadingAnchor.constraint(equalTo: demoMirrorTargetDisplayContainer.leadingAnchor, constant: 12),
+            grid.trailingAnchor.constraint(equalTo: demoMirrorTargetDisplayContainer.trailingAnchor, constant: -12),
+            grid.bottomAnchor.constraint(equalTo: demoMirrorTargetDisplayContainer.bottomAnchor, constant: -12),
+        ])
+    }
+
+    @objc private func selectDemoMirrorTarget(_ sender: DisplayPreviewButton) {
+        selectedDemoMirrorTargetDisplayID = sender.displayID
+        demoMirrorTargetButtons.forEach {
+            $0.setSelected($0.displayID == selectedDemoMirrorTargetDisplayID)
+        }
+        setFeedback("Target changed. Click Save Changes to apply.")
     }
 
     private func parsedShortcutBindings() throws -> [ShortcutAction: ShortcutBinding] {
@@ -1017,6 +1114,128 @@ extension PreferencesWindowController: NSTableViewDelegate {
 }
 
 // MARK: - Custom Views
+
+@MainActor
+private final class DisplayPreviewButton: NSButton {
+    let displayID: CGDirectDisplayID?
+
+    private let previewImageView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
+    private let selectionImageView = NSImageView()
+    private var isSelected = false
+
+    init(
+        displayID: CGDirectDisplayID?,
+        name: String,
+        detail: String,
+        previewImage: NSImage?
+    ) {
+        self.displayID = displayID
+        super.init(frame: .zero)
+
+        title = ""
+        isBordered = false
+        setButtonType(.momentaryPushIn)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+        focusRingType = .default
+        toolTip = displayID == nil ? "Choose a target automatically" : "\(name), \(detail)"
+        setAccessibilityLabel(displayID == nil ? "Automatic target display" : "\(name), \(detail)")
+
+        previewImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewImageView.image = previewImage ?? NSImage(
+            systemSymbolName: "display",
+            accessibilityDescription: nil
+        )
+        previewImageView.imageScaling = .scaleProportionallyUpOrDown
+        previewImageView.imageAlignment = .alignCenter
+        previewImageView.wantsLayer = true
+        previewImageView.layer?.cornerRadius = 7
+        previewImageView.layer?.masksToBounds = true
+        previewImageView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.82).cgColor
+
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.stringValue = name
+        nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.maximumNumberOfLines = 1
+
+        detailLabel.translatesAutoresizingMaskIntoConstraints = false
+        detailLabel.stringValue = detail
+        detailLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        detailLabel.textColor = .secondaryLabelColor
+
+        selectionImageView.translatesAutoresizingMaskIntoConstraints = false
+        selectionImageView.image = NSImage(
+            systemSymbolName: "checkmark.circle.fill",
+            accessibilityDescription: "Selected"
+        )
+        selectionImageView.contentTintColor = .controlAccentColor
+
+        addSubview(previewImageView)
+        addSubview(nameLabel)
+        addSubview(detailLabel)
+        addSubview(selectionImageView)
+
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 150),
+
+            previewImageView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            previewImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            previewImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            previewImageView.heightAnchor.constraint(equalToConstant: 92),
+
+            nameLabel.topAnchor.constraint(equalTo: previewImageView.bottomAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: selectionImageView.leadingAnchor, constant: -6),
+
+            detailLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            detailLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8),
+
+            selectionImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            selectionImageView.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+            selectionImageView.widthAnchor.constraint(equalToConstant: 17),
+            selectionImageView.heightAnchor.constraint(equalToConstant: 17),
+        ])
+
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setSelected(_ selected: Bool) {
+        isSelected = selected
+        selectionImageView.isHidden = !selected
+        setAccessibilityValue(selected ? "Selected" : "Not selected")
+        updateAppearance()
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        guard let layer else { return }
+        if isSelected {
+            layer.borderWidth = 2
+            layer.borderColor = NSColor.controlAccentColor.cgColor
+            layer.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.10).cgColor
+        } else {
+            layer.borderWidth = 1
+            layer.borderColor = NSColor.separatorColor.cgColor
+            layer.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        }
+    }
+}
 
 private class CardBackgroundView: NSView {
     override init(frame: NSRect) {

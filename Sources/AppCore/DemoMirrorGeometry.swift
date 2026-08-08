@@ -2,6 +2,16 @@ import CoreGraphics
 import Foundation
 
 public enum DemoMirrorGeometry {
+    public static func reconciledTargetDisplayID(
+        _ selectedID: UInt32?,
+        availableDisplayIDs: [UInt32]
+    ) -> UInt32? {
+        guard let selectedID, availableDisplayIDs.contains(selectedID) else {
+            return nil
+        }
+        return selectedID
+    }
+
     public static func fittedRect(contentSize: CGSize, in bounds: CGRect) -> CGRect? {
         let normalizedBounds = bounds.standardized
         guard

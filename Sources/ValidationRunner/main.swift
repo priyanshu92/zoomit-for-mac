@@ -229,6 +229,21 @@ enum ValidationRunner {
     }
 
     private static func validateDemoMirrorGeometry() throws {
+        try expect(
+            DemoMirrorGeometry.reconciledTargetDisplayID(
+                5,
+                availableDisplayIDs: [1, 4, 5]
+            ) == 5,
+            "Connected Demo Mirror target should remain selected"
+        )
+        try expect(
+            DemoMirrorGeometry.reconciledTargetDisplayID(
+                5,
+                availableDisplayIDs: [1, 4]
+            ) == nil,
+            "Disconnected Demo Mirror target should fall back to Automatic"
+        )
+
         let target = CGRect(x: 1920, y: 0, width: 1920, height: 1200)
         let fitted = DemoMirrorGeometry.fittedRect(
             contentSize: CGSize(width: 1920, height: 1080),

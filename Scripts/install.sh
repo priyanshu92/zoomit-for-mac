@@ -49,9 +49,9 @@ cat > "$CONTENTS_DIR/Info.plist" << PLIST
     <key>CFBundleIdentifier</key>
     <string>${BUNDLE_ID}</string>
     <key>CFBundleVersion</key>
-    <string>1.12.0</string>
+    <string>1.13.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.12.0</string>
+    <string>1.13.0</string>
     <key>CFBundleExecutable</key>
     <string>ZoomItForMacApp</string>
     <key>CFBundlePackageType</key>

@@ -173,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcutStore: shortcutStore,
             settingsStore: settingsStore,
             permissionsService: permissionsService,
+            screenCaptureService: screenCaptureService,
             delegate: self
         )
 
