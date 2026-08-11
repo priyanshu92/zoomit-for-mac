@@ -436,7 +436,7 @@ final class RecordingController {
 
     private func captureFrame() {
         let point = targetCaptureRegion?.center ?? targetScreenPoint ?? NSEvent.mouseLocation
-        guard let snapshot = captureRecordingSnapshot(containing: point) else {
+        guard let snapshot = screenCaptureService.captureScreen(containing: point) else {
             return
         }
 
@@ -464,37 +464,6 @@ final class RecordingController {
         }
 
         capturedFrames.append(frame)
-    }
-
-    private func captureRecordingSnapshot(containing point: CGPoint) -> ScreenSnapshot? {
-        guard let recordingHighlightWindow else {
-            return screenCaptureService.captureScreen(containing: point)
-        }
-
-        guard
-            let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
-            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        else {
-            return screenCaptureService.captureScreen(containing: point)
-        }
-
-        let image = CGWindowListCreateImage(
-            CGDisplayBounds(displayID),
-            .optionOnScreenBelowWindow,
-            CGWindowID(recordingHighlightWindow.windowNumber),
-            .bestResolution
-        ) ?? CGDisplayCreateImage(displayID)
-
-        guard let image else {
-            return screenCaptureService.captureScreen(containing: point)
-        }
-
-        return ScreenSnapshot(
-            displayID: displayID,
-            image: image,
-            screenFrame: screen.frame,
-            scaleFactor: screen.backingScaleFactor
-        )
     }
 
     private func imageWithCursor(from snapshot: ScreenSnapshot, mouseLocation: CGPoint) -> CGImage {
@@ -1048,12 +1017,16 @@ final class RecordingController {
             defer: false,
             screen: screen
         )
-        window.level = .statusBar
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         window.backgroundColor = .clear
         window.isOpaque = false
         window.ignoresMouseEvents = true
         window.hasShadow = false
         window.hidesOnDeactivate = false
+        // The border must stay above transient UI without becoming part of the
+        // full-display capture. Capturing only below this window would drop any
+        // other app window whose level is higher than the border.
+        window.sharingType = .none
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         let localHighlightedRegion = CGRect(
