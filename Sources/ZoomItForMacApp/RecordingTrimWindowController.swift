@@ -16,8 +16,7 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
     private let frames: [CGImage]
     private let modeLabel: String
     private var session: RecordingTrimSession
-    private var result: RecordingTrimResult = .cancel
-    private var isRunningModal = false
+    private var completion: ((RecordingTrimResult) -> Void)?
     private var playbackTimer: Timer?
 
     private let previewImageView = NonIntrinsicImageView()
@@ -103,29 +102,19 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
         fatalError("init(coder:) has not been implemented")
     }
 
-    func runModal() -> RecordingTrimResult {
-        guard let window else {
-            return .cancel
-        }
-        guard !isRunningModal else {
-            return result
+    func present(completion: @escaping (RecordingTrimResult) -> Void) {
+        guard let window, self.completion == nil else {
+            completion(.cancel)
+            return
         }
 
-        result = .cancel
+        self.completion = completion
         refreshUI(updateTimeline: true)
         NSApp.activate(ignoringOtherApps: true)
         window.minSize = Self.minimumSizeForCurrentScreen()
         Self.fitWindowToVisibleScreen(window)
         showWindow(nil)
         window.makeKeyAndOrderFront(nil)
-
-        isRunningModal = true
-        NSApp.runModal(for: window)
-        isRunningModal = false
-
-        window.orderOut(nil)
-        stopPlayback()
-        return result
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -140,9 +129,8 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func configureUI(in window: NSWindow) {
-        let contentView = NSView()
+        let contentView = AppearanceBackgroundView()
         contentView.autoresizingMask = [.width, .height]
-        contentView.wantsLayer = true
         window.contentView = contentView
 
         let headerView = makeHeaderView()
@@ -337,15 +325,12 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
         valueLabel.lineBreakMode = .byTruncatingTail
         valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let stack = NSStackView(views: [titleLabel, valueLabel])
+        let stack = AppearanceCardView(arrangedViews: [titleLabel, valueLabel])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .horizontal
         stack.alignment = .firstBaseline
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
-        stack.wantsLayer = true
-        stack.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        stack.layer?.cornerRadius = 8
 
         titleLabel.widthAnchor.constraint(equalToConstant: 62).isActive = true
         return stack
@@ -440,12 +425,10 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
 
     private func finish(with result: RecordingTrimResult) {
         stopPlayback()
-        self.result = result
-        if isRunningModal {
-            NSApp.stopModal()
-        } else {
-            window?.orderOut(nil)
-        }
+        window?.orderOut(nil)
+        let completion = self.completion
+        self.completion = nil
+        completion?(result)
     }
 
     private func clampedFrameIndex(_ frameIndex: Int) -> Int {
@@ -512,6 +495,49 @@ final class RecordingTrimWindowController: NSWindowController, NSWindowDelegate 
         playbackTimer?.invalidate()
         playbackTimer = nil
         playOverlayView.isPlaying = false
+    }
+}
+
+private final class AppearanceBackgroundView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        }
+    }
+}
+
+private final class AppearanceCardView: NSStackView {
+    init(arrangedViews: [NSView]) {
+        super.init(frame: .zero)
+        arrangedViews.forEach(addArrangedSubview)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        }
     }
 }
 

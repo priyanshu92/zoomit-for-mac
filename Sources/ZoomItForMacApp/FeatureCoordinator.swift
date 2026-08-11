@@ -14,6 +14,7 @@ final class FeatureCoordinator {
     private let recordingController: RecordingController
     private let snipController: SnipController
     private let panoramaController: PanoramaController
+    private let notificationController: AppNotificationController
     private var demoMirrorController: DemoMirrorController?
 
     init(
@@ -23,12 +24,14 @@ final class FeatureCoordinator {
         screenCaptureService: ScreenCaptureService,
         clipboardService: ClipboardService,
         ocrService: OCRService,
+        notificationController: AppNotificationController,
         onPanoramaActivityChanged: @escaping (Bool) -> Void = { _ in },
         onDemoMirrorActivityChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.shortcutStore = shortcutStore
         self.settingsStore = settingsStore
         self.permissionsService = permissionsService
+        self.notificationController = notificationController
         let drawOverlayController = DrawOverlayController(
             settingsStore: settingsStore,
             screenCaptureService: screenCaptureService
@@ -74,6 +77,14 @@ final class FeatureCoordinator {
         self.drawOverlayController.onShortcutAction = { [weak self] action in
             self?.trigger(action)
         }
+        self.recordingController.onResult = { [weak self] result in
+            switch result {
+            case let .success(completion):
+                self?.presentNotification(title: completion.title, message: completion.message)
+            case let .failure(error):
+                self?.presentNotification(title: "Recording failed", message: error.localizedDescription)
+            }
+        }
     }
 
     func trigger(_ action: ShortcutAction, preCapturedImage: CGImage? = nil) {
@@ -81,7 +92,7 @@ final class FeatureCoordinator {
 
         if action == .zoom || action == .liveZoom || action == .liveDraw {
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
@@ -124,7 +135,7 @@ final class FeatureCoordinator {
                 return
             }
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
@@ -145,27 +156,23 @@ final class FeatureCoordinator {
 
         if action == .record || action == .cropRecord || action == .windowRecord {
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
             do {
-                let result: RecordingToggleResult
                 switch action {
                 case .record:
-                    result = try recordingController.toggle()
+                    try recordingController.toggle()
                 case .cropRecord:
-                    result = try recordingController.toggleCropped()
+                    try recordingController.toggleCropped()
                 case .windowRecord:
-                    result = try recordingController.toggleHoveredWindow()
+                    try recordingController.toggleHoveredWindow()
                 default:
                     return
                 }
-                if result.shouldPresentAlert {
-                    presentClipboardResultAlert(title: result.title, message: result.message)
-                }
             } catch {
-                presentClipboardResultAlert(
+                presentNotification(
                     title: "Recording failed",
                     message: error.localizedDescription
                 )
@@ -175,7 +182,7 @@ final class FeatureCoordinator {
 
         if action == .snip || action == .saveSnip {
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
@@ -198,20 +205,20 @@ final class FeatureCoordinator {
                     result = try (action == .snip ? snipController.captureToClipboard() : snipController.captureToFile())
                 }
                 if action == .saveSnip {
-                    presentClipboardResultAlert(title: result.title, message: result.message)
+                    presentNotification(title: result.title, message: result.message)
                 }
             } catch {
                 if action == .snip, case SnipControllerError.selectionCancelled = error {
                     return
                 }
-                presentClipboardResultAlert(title: "Snip failed", message: error.localizedDescription)
+                presentNotification(title: "Snip failed", message: error.localizedDescription)
             }
             return
         }
 
         if action == .panorama || action == .savePanorama {
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
@@ -221,26 +228,26 @@ final class FeatureCoordinator {
                 ) { [weak self] result in
                     switch result {
                     case let .success(captureResult):
-                        self?.presentClipboardResultAlert(title: captureResult.title, message: captureResult.message)
+                        self?.presentNotification(title: captureResult.title, message: captureResult.message)
                     case let .failure(error):
                         if case PanoramaControllerError.selectionCancelled = error {
                             return
                         }
-                        self?.presentClipboardResultAlert(title: "Panorama failed", message: error.localizedDescription)
+                        self?.presentNotification(title: "Panorama failed", message: error.localizedDescription)
                     }
                 }
             } catch {
                 if case PanoramaControllerError.selectionCancelled = error {
                     return
                 }
-                presentClipboardResultAlert(title: "Panorama failed", message: error.localizedDescription)
+                presentNotification(title: "Panorama failed", message: error.localizedDescription)
             }
             return
         }
 
         if action == .ocrSnip {
             guard permissions.screenRecording == .granted else {
-                presentMissingPermissionAlert(for: action, permissions: permissions)
+                presentMissingPermissionNotification(for: action, permissions: permissions)
                 return
             }
 
@@ -251,12 +258,12 @@ final class FeatureCoordinator {
                 } else {
                     result = try snipController.captureOCRText()
                 }
-                presentClipboardResultAlert(
+                presentNotification(
                     title: result.title,
                     message: result.message
                 )
             } catch {
-                presentClipboardResultAlert(
+                presentNotification(
                     title: "OCR snip failed",
                     message: error.localizedDescription
                 )
@@ -265,12 +272,9 @@ final class FeatureCoordinator {
         }
 
         let shortcut = shortcutStore.binding(for: action)
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "\(action.title) is wired to \(shortcut.windowsStyleDescription)"
-        alert.informativeText = """
+        presentNotification(
+            title: "\(action.title) is wired to \(shortcut.windowsStyleDescription)",
+            message: """
         The foundation build is running as a native macOS menu bar app with Windows-equivalent default shortcuts.
 
         Current permissions:
@@ -278,8 +282,7 @@ final class FeatureCoordinator {
         • Accessibility: \(permissions.accessibility.rawValue)
         • Input Monitoring: \(permissions.inputMonitoring.rawValue)
         """
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        )
     }
 
     func dismissActiveOverlay() {
@@ -297,25 +300,17 @@ final class FeatureCoordinator {
     }
 
     func presentStartupError(_ error: Error) {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Hotkey registration failed"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        presentNotification(
+            title: "Hotkey registration failed",
+            message: error.localizedDescription
+        )
     }
 
-    private func presentMissingPermissionAlert(for action: ShortcutAction, permissions: PermissionSnapshot) {
+    private func presentMissingPermissionNotification(for action: ShortcutAction, permissions: PermissionSnapshot) {
         let shortcut = shortcutStore.binding(for: action)
-
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "\(action.title) needs Screen Recording permission"
-        alert.informativeText = """
+        presentNotification(
+            title: "\(action.title) needs Screen Recording permission",
+            message: """
         \(shortcut.windowsStyleDescription) is configured correctly, but macOS is blocking screen capture.
 
         Current permissions:
@@ -323,30 +318,15 @@ final class FeatureCoordinator {
         • Accessibility: \(permissions.accessibility.rawValue)
         • Input Monitoring: \(permissions.inputMonitoring.rawValue)
         """
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        )
     }
 
-    private func presentClipboardResultAlert(title: String, message: String) {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    private func presentNotification(title: String, message: String) {
+        notificationController.post(title: title, message: message)
     }
 
     private func presentFeatureError(title: String, message: String) {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        presentNotification(title: title, message: message)
     }
 
     private func makeSnapshotFromPreCapture(_ image: CGImage) -> ScreenSnapshot? {

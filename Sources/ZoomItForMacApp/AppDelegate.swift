@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let screenCaptureService = MacScreenCaptureService()
     private let clipboardService = MacClipboardService()
     private let ocrService = VisionOCRService()
+    private let notificationController = AppNotificationController()
     private var hotKeyCenter: GlobalHotKeyCenter?
     private var statusController: StatusItemController?
     private var preferencesController: PreferencesWindowController?
@@ -122,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenCaptureService: screenCaptureService,
         clipboardService: clipboardService,
         ocrService: ocrService,
+        notificationController: notificationController,
         onPanoramaActivityChanged: { [weak self] isActive in
             panoramaEventTapIsActive = isActive
             self?.statusController?.setPanoramaActive(isActive)
@@ -135,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         zoomItDebugLog("applicationDidFinishLaunching")
+        notificationController.requestAuthorization()
         // Install CGEvent tap for snip actions — intercepts keys before menu tracking
         setupSnipEventTap()
 
