@@ -138,7 +138,7 @@ enum RecordingControllerError: LocalizedError {
 private enum RecordingMode: Sendable {
     case fullDisplay
     case selectedRegion(CGRect)
-    case hoveredWindow(CGRect)
+    case hoveredWindow(RecordableWindow)
 
     var label: String {
         switch self {
@@ -155,10 +155,17 @@ private enum RecordingMode: Sendable {
         switch self {
         case .fullDisplay:
             return nil
-        case let .selectedRegion(rect), let .hoveredWindow(rect):
+        case let .selectedRegion(rect):
             return rect
+        case let .hoveredWindow(window):
+            return window.frame
         }
     }
+}
+
+private struct RecordableWindow: Sendable {
+    let id: CGWindowID
+    let frame: CGRect
 }
 
 @MainActor
@@ -175,6 +182,8 @@ final class RecordingController {
     private var recordingMode: RecordingMode = .fullDisplay
     private var recordingStartedAt: Date?
     private var recordingHighlightWindow: NSWindow?
+    private var recordingHighlightRegion: CGRect?
+    private var recordingHighlightScreenFrame: CGRect?
     private var trimController: RecordingTrimWindowController?
     private var destinationPanel: NSSavePanel?
     private var destinationAccessory: RecordingFormatAccessory?
@@ -226,8 +235,8 @@ final class RecordingController {
         }
 
         try ensureReadyToRecord()
-        let frame = try hoveredWindowFrame()
-        let mode = RecordingMode.hoveredWindow(frame)
+        let window = try hoveredWindow()
+        let mode = RecordingMode.hoveredWindow(window)
         try start(mode: mode)
     }
 
@@ -435,6 +444,18 @@ final class RecordingController {
     }
 
     private func captureFrame() {
+        if case let .hoveredWindow(window) = recordingMode {
+            guard
+                let currentFrame = currentWindowFrame(for: window.id),
+                let frame = captureWindow(window, currentFrame: currentFrame)
+            else {
+                return
+            }
+            updateRecordingHighlight(for: currentFrame)
+            capturedFrames.append(frame)
+            return
+        }
+
         let point = targetCaptureRegion?.center ?? targetScreenPoint ?? NSEvent.mouseLocation
         guard let snapshot = screenCaptureService.captureScreen(containing: point) else {
             return
@@ -466,7 +487,41 @@ final class RecordingController {
         capturedFrames.append(frame)
     }
 
+    private func captureWindow(_ window: RecordableWindow, currentFrame: CGRect) -> CGImage? {
+        // Capturing the window by ID keeps transient windows such as notifications
+        // out of the recording; a display capture cropped to this frame does not.
+        guard let image = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            window.id,
+            [.bestResolution, .boundsIgnoreFraming]
+        ) else {
+            return nil
+        }
+
+        return imageWithCursor(
+            image: image,
+            capturedFrame: currentFrame,
+            scaleFactor: CGFloat(image.width) / currentFrame.width,
+            mouseLocation: NSEvent.mouseLocation
+        )
+    }
+
     private func imageWithCursor(from snapshot: ScreenSnapshot, mouseLocation: CGPoint) -> CGImage {
+        imageWithCursor(
+            image: snapshot.image,
+            capturedFrame: snapshot.screenFrame,
+            scaleFactor: snapshot.scaleFactor,
+            mouseLocation: mouseLocation
+        )
+    }
+
+    private func imageWithCursor(
+        image: CGImage,
+        capturedFrame: CGRect,
+        scaleFactor: CGFloat,
+        mouseLocation: CGPoint
+    ) -> CGImage {
         let cursor = NSCursor.current
         let cursorSize = cursor.image.size
         guard
@@ -474,38 +529,38 @@ final class RecordingController {
                 at: mouseLocation,
                 cursorSize: cursorSize,
                 cursorHotSpot: cursor.hotSpot,
-                within: snapshot.screenFrame,
-                scaleFactor: snapshot.scaleFactor
+                within: capturedFrame,
+                scaleFactor: scaleFactor
             ),
             let cursorImage = cursorCGImage(cursor)
         else {
-            return snapshot.image
+            return image
         }
 
         guard
-            let colorSpace = snapshot.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+            let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
             let context = CGContext(
                 data: nil,
-                width: snapshot.image.width,
-                height: snapshot.image.height,
+                width: image.width,
+                height: image.height,
                 bitsPerComponent: 8,
                 bytesPerRow: 0,
                 space: colorSpace,
                 bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
             )
         else {
-            return snapshot.image
+            return image
         }
 
-        let imageBounds = CGRect(x: 0, y: 0, width: snapshot.image.width, height: snapshot.image.height)
-        context.draw(snapshot.image, in: imageBounds)
+        let imageBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.draw(image, in: imageBounds)
         context.draw(cursorImage, in: CGRect(
             x: cursorRect.minX,
-            y: CGFloat(snapshot.image.height) - cursorRect.maxY,
+            y: CGFloat(image.height) - cursorRect.maxY,
             width: cursorRect.width,
             height: cursorRect.height
         ))
-        return context.makeImage() ?? snapshot.image
+        return context.makeImage() ?? image
     }
 
     private func cursorCGImage(_ cursor: NSCursor) -> CGImage? {
@@ -530,7 +585,7 @@ final class RecordingController {
         return selection
     }
 
-    private func hoveredWindowFrame() throws -> CGRect {
+    private func hoveredWindow() throws -> RecordableWindow {
         let mouseLocation = NSEvent.mouseLocation
         guard let accessibilityPoint = accessibilityPoint(for: mouseLocation) else {
             throw RecordingControllerError.hoveredWindowUnavailable
@@ -548,16 +603,16 @@ final class RecordingController {
         if hitTestResult == .success,
            let elementReference,
            let window = windowElement(containing: elementReference),
-           let frame = recordableFrame(of: window, preferredPoint: mouseLocation) {
-            return frame
+           let recordableWindow = recordableWindow(of: window, preferredPoint: mouseLocation) {
+            return recordableWindow
         }
 
         if let frontmostApplication = NSWorkspace.shared.frontmostApplication {
             let applicationElement = AXUIElementCreateApplication(frontmostApplication.processIdentifier)
             let focusedWindow: AXUIElement? = attributeValue(kAXFocusedWindowAttribute as CFString, of: applicationElement)
             if let focusedWindow,
-               let frame = recordableFrame(of: focusedWindow, preferredPoint: mouseLocation) {
-                return frame
+               let recordableWindow = recordableWindow(of: focusedWindow, preferredPoint: mouseLocation) {
+                return recordableWindow
             }
         }
 
@@ -591,18 +646,75 @@ final class RecordingController {
         return typedValue
     }
 
-    private func recordableFrame(of element: AXUIElement, preferredPoint: CGPoint) -> CGRect? {
+    private func recordableWindow(of element: AXUIElement, preferredPoint: CGPoint) -> RecordableWindow? {
         guard
             let displayFrame = displayFrame(of: element),
             let screenFrame = CaptureGeometry.screenRect(
                 forDisplayRect: displayFrame,
                 displayOriginReferenceHeight: displayOriginReferenceHeight()
-            )
+            ),
+            let frame = clampedFrameToScreen(screenFrame, preferredPoint: preferredPoint)
         else {
             return nil
         }
 
-        return clampedFrameToScreen(screenFrame, preferredPoint: preferredPoint)
+        var processID: pid_t = 0
+        guard AXUIElementGetPid(element, &processID) == .success else {
+            return nil
+        }
+
+        guard let id = matchingWindowID(
+            processID: processID,
+            displayFrame: displayFrame
+        ) else {
+            return nil
+        }
+
+        return RecordableWindow(id: id, frame: frame)
+    }
+
+    private func matchingWindowID(processID: pid_t, displayFrame: CGRect) -> CGWindowID? {
+        guard let windows = CGWindowListCopyWindowInfo(
+            .optionOnScreenOnly,
+            kCGNullWindowID
+        ) as? [[CFString: Any]] else {
+            return nil
+        }
+
+        return windows.first { window in
+            guard
+                let ownerPID = window[kCGWindowOwnerPID] as? NSNumber,
+                ownerPID.int32Value == processID,
+                let bounds = window[kCGWindowBounds] as? NSDictionary,
+                let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            else {
+                return false
+            }
+
+            return frame.integral.equalTo(displayFrame.integral)
+        }.flatMap { window in
+            guard let windowNumber = window[kCGWindowNumber] as? NSNumber else {
+                return nil
+            }
+            return CGWindowID(windowNumber.uint32Value)
+        }
+    }
+
+    private func currentWindowFrame(for windowID: CGWindowID) -> CGRect? {
+        guard
+            let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID)
+                as? [[CFString: Any]],
+            let window = windows.first,
+            let bounds = window[kCGWindowBounds] as? NSDictionary,
+            let displayFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+        else {
+            return nil
+        }
+
+        return CaptureGeometry.screenRect(
+            forDisplayRect: displayFrame,
+            displayOriginReferenceHeight: displayOriginReferenceHeight()
+        )
     }
 
     private func displayFrame(of element: AXUIElement) -> CGRect? {
@@ -1051,6 +1163,8 @@ final class RecordingController {
     private func showRecordingHighlightIfNeeded(on screenFrame: CGRect, highlightedRegion: CGRect?) {
         recordingHighlightWindow?.orderOut(nil)
         recordingHighlightWindow = nil
+        recordingHighlightRegion = nil
+        recordingHighlightScreenFrame = nil
 
         guard
             let highlightedRegion,
@@ -1068,6 +1182,24 @@ final class RecordingController {
         window?.orderFrontRegardless()
         window?.contentView?.displayIfNeeded()
         recordingHighlightWindow = window
+        recordingHighlightRegion = highlightedRegion
+        recordingHighlightScreenFrame = screen.frame
+    }
+
+    private func updateRecordingHighlight(for windowFrame: CGRect) {
+        guard
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(windowFrame.center) })
+        else {
+            return
+        }
+
+        guard
+            recordingHighlightRegion != windowFrame || recordingHighlightScreenFrame != screen.frame
+        else {
+            return
+        }
+
+        showRecordingHighlightIfNeeded(on: screen.frame, highlightedRegion: windowFrame)
     }
 
     private func resetRecordingState() {
@@ -1083,6 +1215,8 @@ final class RecordingController {
     private func hideRecordingHighlight() {
         recordingHighlightWindow?.orderOut(nil)
         recordingHighlightWindow = nil
+        recordingHighlightRegion = nil
+        recordingHighlightScreenFrame = nil
     }
 
     private func playCountdownBeep() {
