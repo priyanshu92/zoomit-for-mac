@@ -14,6 +14,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var demoTypeCharactersPerTick: Int
     public var demoMirrorTrackWindowRegion: Bool
     public var demoMirrorTargetDisplayID: UInt32?
+    /// BCP 47 code such as "en-US", or nil to let Vision detect the language.
+    public var textRecognitionLanguage: String?
+    public var textRecognitionMode: TextRecognitionMode
+    public var textCaptureKeepsLineBreaks: Bool
+    public var textCaptureDetectsTables: Bool
+    public var textCaptureDetectsCodes: Bool
+    public var textCaptureOpensCodeLinks: Bool
+    public var textCaptureSavesHistory: Bool
 
     public init(
         initialZoomFactor: Double,
@@ -27,7 +35,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
         demoTypeText: String,
         demoTypeCharactersPerTick: Int,
         demoMirrorTrackWindowRegion: Bool = true,
-        demoMirrorTargetDisplayID: UInt32? = nil
+        demoMirrorTargetDisplayID: UInt32? = nil,
+        textRecognitionLanguage: String? = nil,
+        textRecognitionMode: TextRecognitionMode = .accurate,
+        textCaptureKeepsLineBreaks: Bool = true,
+        textCaptureDetectsTables: Bool = true,
+        textCaptureDetectsCodes: Bool = true,
+        textCaptureOpensCodeLinks: Bool = false,
+        textCaptureSavesHistory: Bool = true
     ) {
         self.initialZoomFactor = initialZoomFactor
         self.breakDurationMinutes = breakDurationMinutes
@@ -41,6 +56,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.demoTypeCharactersPerTick = demoTypeCharactersPerTick
         self.demoMirrorTrackWindowRegion = demoMirrorTrackWindowRegion
         self.demoMirrorTargetDisplayID = demoMirrorTargetDisplayID
+        self.textRecognitionLanguage = textRecognitionLanguage
+        self.textRecognitionMode = textRecognitionMode
+        self.textCaptureKeepsLineBreaks = textCaptureKeepsLineBreaks
+        self.textCaptureDetectsTables = textCaptureDetectsTables
+        self.textCaptureDetectsCodes = textCaptureDetectsCodes
+        self.textCaptureOpensCodeLinks = textCaptureOpensCodeLinks
+        self.textCaptureSavesHistory = textCaptureSavesHistory
     }
 
     public static var `default`: AppSettings {
@@ -88,6 +110,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case demoTypeCharactersPerTick
         case demoMirrorTrackWindowRegion
         case demoMirrorTargetDisplayID
+        case textRecognitionLanguage
+        case textRecognitionMode
+        case textCaptureKeepsLineBreaks
+        case textCaptureDetectsTables
+        case textCaptureDetectsCodes
+        case textCaptureOpensCodeLinks
+        case textCaptureSavesHistory
     }
 
     public init(from decoder: Decoder) throws {
@@ -110,6 +139,18 @@ public struct AppSettings: Codable, Equatable, Sendable {
             UInt32.self,
             forKey: .demoMirrorTargetDisplayID
         )
+        textRecognitionLanguage = try values.decodeIfPresent(String.self, forKey: .textRecognitionLanguage)
+        // `try?` so an unknown mode written by a newer build falls back to the default
+        // instead of failing the whole decode and resetting every other setting.
+        textRecognitionMode = (try? values.decodeIfPresent(
+            TextRecognitionMode.self,
+            forKey: .textRecognitionMode
+        )) ?? .accurate
+        textCaptureKeepsLineBreaks = try values.decodeIfPresent(Bool.self, forKey: .textCaptureKeepsLineBreaks) ?? true
+        textCaptureDetectsTables = try values.decodeIfPresent(Bool.self, forKey: .textCaptureDetectsTables) ?? true
+        textCaptureDetectsCodes = try values.decodeIfPresent(Bool.self, forKey: .textCaptureDetectsCodes) ?? true
+        textCaptureOpensCodeLinks = try values.decodeIfPresent(Bool.self, forKey: .textCaptureOpensCodeLinks) ?? false
+        textCaptureSavesHistory = try values.decodeIfPresent(Bool.self, forKey: .textCaptureSavesHistory) ?? true
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -126,6 +167,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try values.encode(demoTypeCharactersPerTick, forKey: .demoTypeCharactersPerTick)
         try values.encode(demoMirrorTrackWindowRegion, forKey: .demoMirrorTrackWindowRegion)
         try values.encodeIfPresent(demoMirrorTargetDisplayID, forKey: .demoMirrorTargetDisplayID)
+        try values.encodeIfPresent(textRecognitionLanguage, forKey: .textRecognitionLanguage)
+        try values.encode(textRecognitionMode, forKey: .textRecognitionMode)
+        try values.encode(textCaptureKeepsLineBreaks, forKey: .textCaptureKeepsLineBreaks)
+        try values.encode(textCaptureDetectsTables, forKey: .textCaptureDetectsTables)
+        try values.encode(textCaptureDetectsCodes, forKey: .textCaptureDetectsCodes)
+        try values.encode(textCaptureOpensCodeLinks, forKey: .textCaptureOpensCodeLinks)
+        try values.encode(textCaptureSavesHistory, forKey: .textCaptureSavesHistory)
     }
 }
 
@@ -188,6 +236,12 @@ public extension AppSettings {
 
     var validatedAnnotationFontSize: CGFloat {
         CGFloat(min(max(annotationFontSize, 14), 72))
+    }
+
+    /// Language code with surrounding whitespace removed; nil (automatic) when blank.
+    var validatedTextRecognitionLanguage: String? {
+        let trimmed = textRecognitionLanguage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     var trimmedDemoTypeText: String {

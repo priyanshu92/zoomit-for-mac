@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Time to let the status menu finish closing before a menu-triggered feature runs.
     /// Menu dismissal is animated, so acting immediately captures a half-faded menu.
     fileprivate static let menuDismissalSettleDelay: TimeInterval = 0.25
+    /// Lets login-time work settle before warming up text recognition in the background.
+    private static let textRecognitionWarmUpDelay: TimeInterval = 3
 
     private let shortcutStore = UserDefaultsShortcutStore()
     private let settingsStore = UserDefaultsAppSettingsStore()
@@ -112,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let screenCaptureService = MacScreenCaptureService()
     private let clipboardService = MacClipboardService()
     private let ocrService = VisionOCRService()
+    private let textCaptureHistoryStore = FileTextCaptureHistoryStore()
     private let notificationController = AppNotificationController()
     private var hotKeyCenter: GlobalHotKeyCenter?
     private var statusController: StatusItemController?
@@ -123,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenCaptureService: screenCaptureService,
         clipboardService: clipboardService,
         ocrService: ocrService,
+        textCaptureHistoryStore: textCaptureHistoryStore,
         notificationController: notificationController,
         onPanoramaActivityChanged: { [weak self] isActive in
             panoramaEventTapIsActive = isActive
@@ -134,6 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private var snipEventTap: CFMachPort?
+    /// URLs and files that arrive before launch has finished. AppKit delivers the open
+    /// event that launched the app between `applicationWillFinishLaunching` and
+    /// `applicationDidFinishLaunching`, before Preferences, hotkeys, and the status item
+    /// exist; `zoomit://settings` would do nothing and `zoomit://ocr-file` would block
+    /// launch behind a modal panel. Nil once launch is complete.
+    private var pendingOpenURLs: [URL]? = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         zoomItDebugLog("applicationDidFinishLaunching")
@@ -177,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsStore: settingsStore,
             permissionsService: permissionsService,
             screenCaptureService: screenCaptureService,
+            ocrService: ocrService,
             delegate: self
         )
 
@@ -187,6 +198,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         zoomItDebugLog("Status item controller initialized")
 
+        // The first OCR in a newly installed app (or after a macOS update) compiles
+        // Vision's models, which takes tens of seconds. Do it in the background now so
+        // the user's first capture doesn't wait for it. See VisionOCRService.prepare.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.textRecognitionWarmUpDelay) { [weak self] in
+            self?.featureCoordinator.prepareTextRecognition()
+        }
+
         // Show preferences at Permissions section if any permission is missing
         let permissions = permissionsService.snapshot()
         let allGranted = permissions.screenRecording == .granted
@@ -196,10 +214,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             zoomItDebugLog("Missing permissions; showing preferences")
             preferencesController?.showPermissions()
         }
+
+        let queuedURLs = pendingOpenURLs ?? []
+        pendingOpenURLs = nil
+        handleOpen(queuedURLs)
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         refreshPermissionUI()
+    }
+
+    /// Receives `zoomit://` URLs (declared in the Info.plist written by
+    /// `Scripts/install.sh`) and image or PDF files opened with the app, e.g.
+    /// `open -a "ZoomIt for Mac" scan.png`.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if pendingOpenURLs != nil {
+            pendingOpenURLs?.append(contentsOf: urls)
+            return
+        }
+        handleOpen(urls)
+    }
+
+    private func handleOpen(_ urls: [URL]) {
+        for url in urls {
+            if url.isFileURL {
+                guard TextExtractor.canExtract(fromFileAt: url) else {
+                    zoomItDebugLog("Ignoring opened file that is not an image or PDF: \(url.lastPathComponent)")
+                    continue
+                }
+                featureCoordinator.captureText(fromFileAt: url)
+                continue
+            }
+
+            guard let command = AppURLCommand(url: url) else {
+                zoomItDebugLog("Ignoring unsupported URL: \(url.scheme ?? "")://\(url.host ?? "")")
+                continue
+            }
+            perform(command)
+        }
+    }
+
+    private func perform(_ command: AppURLCommand) {
+        switch command {
+        case let .action(action):
+            // Same settle delay as a menu click: a launcher such as Raycast or Alfred is
+            // still fading out when it opens the URL, and capture features would include it.
+            triggerFeatureAction(action)
+        case .textFromClipboard:
+            captureTextFromClipboard()
+        case .textFromFile:
+            captureTextFromFile()
+        case .textCaptureHistory:
+            showTextCaptureHistory()
+        case .preferences:
+            showPreferences()
+        }
     }
 
     private func refreshPermissionUI() {
@@ -256,6 +325,18 @@ extension AppDelegate: StatusItemControllerDelegate {
         }
     }
 
+    func captureTextFromClipboard() {
+        featureCoordinator.captureTextFromClipboard()
+    }
+
+    func captureTextFromFile() {
+        featureCoordinator.captureTextFromFile()
+    }
+
+    func showTextCaptureHistory() {
+        featureCoordinator.showTextCaptureHistory()
+    }
+
     func showPreferences() {
         preferencesController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -298,5 +379,13 @@ extension AppDelegate: PreferencesWindowControllerDelegate {
 
     func preferencesDidChangePermissions() {
         refreshPermissionUI()
+    }
+
+    func preferencesDidRequestTextCaptureHistory() {
+        featureCoordinator.showTextCaptureHistory()
+    }
+
+    func preferencesDidRequestClearTextCaptureHistory() {
+        featureCoordinator.clearTextCaptureHistory()
     }
 }

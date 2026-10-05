@@ -6,6 +6,9 @@ import ServiceManagement
 @MainActor
 protocol StatusItemControllerDelegate: AnyObject {
     func triggerFeatureAction(_ action: ShortcutAction)
+    func captureTextFromClipboard()
+    func captureTextFromFile()
+    func showTextCaptureHistory()
     func showPreferences()
     func requestScreenRecordingPermission()
     func requestAccessibilityPermission()
@@ -143,6 +146,27 @@ final class StatusItemController: NSObject {
             for action in group {
                 menu.addItem(makeFeatureActionItem(for: action))
             }
+
+            if group.contains(.ocrSnip) {
+                addTextCaptureItems(to: menu)
+            }
+        }
+    }
+
+    /// Text capture commands that have no global shortcut. They sit in the OCR Snip block
+    /// so everything that reads text lives together.
+    private func addTextCaptureItems(to menu: NSMenu) {
+        let items: [(String, String, Selector)] = [
+            ("Text from Clipboard", "doc.on.clipboard", #selector(captureTextFromClipboard)),
+            ("Text from Image or PDF…", "photo.on.rectangle", #selector(captureTextFromFile)),
+            ("Text Capture History…", "clock.arrow.circlepath", #selector(showTextCaptureHistory)),
+        ]
+        for (title, symbolName, action) in items {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            item.image = Self.menuIcon(named: symbolName)
+            menu.addItem(item)
         }
     }
 
@@ -275,6 +299,18 @@ final class StatusItemController: NSObject {
             return
         }
         delegate?.triggerFeatureAction(action)
+    }
+
+    @objc private func captureTextFromClipboard() {
+        delegate?.captureTextFromClipboard()
+    }
+
+    @objc private func captureTextFromFile() {
+        delegate?.captureTextFromFile()
+    }
+
+    @objc private func showTextCaptureHistory() {
+        delegate?.showTextCaptureHistory()
     }
 
     @objc private func openPreferences() {

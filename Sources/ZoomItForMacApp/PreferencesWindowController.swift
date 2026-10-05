@@ -6,11 +6,14 @@ import PlatformServices
 protocol PreferencesWindowControllerDelegate: AnyObject {
     func preferencesDidUpdateShortcuts()
     func preferencesDidChangePermissions()
+    func preferencesDidRequestTextCaptureHistory()
+    func preferencesDidRequestClearTextCaptureHistory()
 }
 
 private enum PreferencesSection: Int, CaseIterable {
     case general
     case recording
+    case textCapture
     case demoMirror
     case shortcuts
     case permissions
@@ -19,6 +22,7 @@ private enum PreferencesSection: Int, CaseIterable {
         switch self {
         case .general: "General"
         case .recording: "Recording"
+        case .textCapture: "Text Capture"
         case .demoMirror: "Demo Mirror"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
@@ -29,6 +33,7 @@ private enum PreferencesSection: Int, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .recording: "record.circle"
+        case .textCapture: "text.viewfinder"
         case .demoMirror: "rectangle.on.rectangle"
         case .shortcuts: "keyboard"
         case .permissions: "lock.shield"
@@ -46,6 +51,7 @@ final class PreferencesWindowController: NSWindowController {
     private let settingsStore: AppSettingsStore
     private let permissionsService: PermissionsService
     private let screenCaptureService: ScreenCaptureService
+    private let ocrService: OCRService
     private weak var delegate: PreferencesWindowControllerDelegate?
 
     // Sidebar & detail
@@ -67,6 +73,13 @@ final class PreferencesWindowController: NSWindowController {
         target: nil,
         action: nil
     )
+    private let textLanguagePopUp = NSPopUpButton()
+    private let textModePopUp = NSPopUpButton()
+    private let textKeepLineBreaksSwitch = NSSwitch()
+    private let textDetectTablesSwitch = NSSwitch()
+    private let textDetectCodesSwitch = NSSwitch()
+    private let textOpenCodeLinksSwitch = NSSwitch()
+    private let textSaveHistorySwitch = NSSwitch()
     private var demoMirrorTargetButtons: [DisplayPreviewButton] = []
     private var selectedDemoMirrorTargetDisplayID: CGDirectDisplayID?
     private var screenParametersObserver: NSObjectProtocol?
@@ -84,12 +97,14 @@ final class PreferencesWindowController: NSWindowController {
         settingsStore: AppSettingsStore,
         permissionsService: PermissionsService,
         screenCaptureService: ScreenCaptureService,
+        ocrService: OCRService,
         delegate: PreferencesWindowControllerDelegate
     ) {
         self.shortcutStore = shortcutStore
         self.settingsStore = settingsStore
         self.permissionsService = permissionsService
         self.screenCaptureService = screenCaptureService
+        self.ocrService = ocrService
         self.delegate = delegate
 
         let contentRect = NSRect(x: 0, y: 0, width: 820, height: 620)
@@ -155,6 +170,7 @@ final class PreferencesWindowController: NSWindowController {
         demoMirrorTrackWindowCheckbox.state = settings.demoMirrorTrackWindowRegion ? .on : .off
         selectedDemoMirrorTargetDisplayID = settings.demoMirrorTargetDisplayID
         refreshDemoMirrorTargetDisplays(announceDisconnectedSelection: false)
+        loadTextCaptureSettings(settings)
 
         for action in ShortcutAction.allCases {
             shortcutFields[action]?.stringValue = bindings[action]?.windowsStyleDescription ?? ""
@@ -248,6 +264,7 @@ final class PreferencesWindowController: NSWindowController {
         sectionViews = [
             .general: buildGeneralSection(),
             .recording: buildRecordingSection(),
+            .textCapture: buildTextCaptureSection(),
             .demoMirror: buildDemoMirrorSection(),
             .shortcuts: buildShortcutsSection(),
             .permissions: buildPermissionsSection(),
@@ -409,6 +426,126 @@ final class PreferencesWindowController: NSWindowController {
         ), to: stack)
 
         return container
+    }
+
+    private func buildTextCaptureSection() -> NSView {
+        let container = FlippedView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        let stack = makeSectionStack(in: container)
+
+        addFullWidth(makeSectionTitle("Text Capture"), to: stack)
+
+        let shortcut = shortcutStore.binding(for: .ocrSnip).windowsStyleDescription
+        let explanation = NSTextField(
+            wrappingLabelWithString: "Press \(shortcut) and drag over anything on screen, such as a paused video, a scanned PDF, or a shared screen, to copy its text. You can also read the image on the clipboard or open an image or PDF from the menu bar."
+        )
+        explanation.textColor = .secondaryLabelColor
+        explanation.font = .systemFont(ofSize: 12)
+        addFullWidth(explanation, to: stack)
+
+        textModePopUp.removeAllItems()
+        for mode in TextRecognitionMode.allCases {
+            textModePopUp.addItem(withTitle: mode.title)
+            textModePopUp.lastItem?.representedObject = mode.rawValue
+        }
+
+        addFullWidth(makeGroupCard(
+            header: "RECOGNITION",
+            rows: [
+                makeSettingsRow(label: "Language", control: textLanguagePopUp),
+                makeSettingsRow(label: "Mode", control: textModePopUp),
+                makeSettingsRow(label: "Keep line breaks", control: textKeepLineBreaksSwitch),
+                makeSettingsRow(label: "Keep table layout", control: textDetectTablesSwitch),
+            ],
+            footer: "Text is read on this Mac with Apple's Vision framework and never uploaded. Automatic detects the language. Fast mode reads fewer languages and falls back to automatic for the rest. Turn off line breaks to join wrapped lines into paragraphs. Tables are copied as tab-separated text plus a real table, so they paste as tables into Numbers, Excel, Notes, Pages, and Word."
+        ), to: stack)
+
+        addFullWidth(makeGroupCard(
+            header: "CODES & LINKS",
+            rows: [
+                makeSettingsRow(label: "Read QR codes and barcodes", control: textDetectCodesSwitch),
+                makeSettingsRow(label: "Open QR code links automatically", control: textOpenCodeLinksSwitch),
+            ],
+            footer: "When a selection contains a code, its contents are copied instead of the surrounding text. Only web links (http and https) are ever opened."
+        ), to: stack)
+
+        let showHistoryButton = NSButton(title: "Show History…", target: self, action: #selector(showTextCaptureHistory))
+        showHistoryButton.bezelStyle = .rounded
+        showHistoryButton.controlSize = .small
+        let clearHistoryButton = NSButton(title: "Clear History…", target: self, action: #selector(clearTextCaptureHistory))
+        clearHistoryButton.bezelStyle = .rounded
+        clearHistoryButton.controlSize = .small
+        let historyButtons = NSStackView(views: [showHistoryButton, clearHistoryButton])
+        historyButtons.orientation = .horizontal
+        historyButtons.spacing = 6
+
+        addFullWidth(makeGroupCard(
+            header: "HISTORY",
+            rows: [
+                makeSettingsRow(label: "Save capture history", control: textSaveHistorySwitch),
+                makeSettingsRow(label: "Saved captures", control: historyButtons),
+            ],
+            footer: "History stays on this Mac and keeps the \(TextCaptureHistory.defaultLimit) most recent captures. Turning it off stops saving new captures but keeps existing ones until you clear them."
+        ), to: stack)
+
+        return container
+    }
+
+    private func loadTextCaptureSettings(_ settings: AppSettings) {
+        let selectedLanguage = settings.validatedTextRecognitionLanguage
+        var languageCodes = ocrService.supportedLanguageCodes(for: .accurate)
+        // Keep a saved language selectable even if this Mac's Vision no longer lists it,
+        // so opening and saving Preferences does not silently reset it.
+        if let selectedLanguage, !languageCodes.contains(selectedLanguage) {
+            languageCodes.append(selectedLanguage)
+        }
+        let namedLanguages = languageCodes
+            .map { code in (code, Locale.current.localizedString(forIdentifier: code) ?? code) }
+            .sorted { $0.1.localizedStandardCompare($1.1) == .orderedAscending }
+
+        textLanguagePopUp.removeAllItems()
+        textLanguagePopUp.addItem(withTitle: "Automatic")
+        textLanguagePopUp.menu?.addItem(.separator())
+        for (code, name) in namedLanguages {
+            textLanguagePopUp.addItem(withTitle: name)
+            textLanguagePopUp.lastItem?.representedObject = code
+        }
+        if
+            let selectedLanguage,
+            let item = textLanguagePopUp.itemArray.first(where: { ($0.representedObject as? String) == selectedLanguage })
+        {
+            textLanguagePopUp.select(item)
+        } else {
+            textLanguagePopUp.selectItem(at: 0)
+        }
+
+        textModePopUp.selectItem(at: TextRecognitionMode.allCases.firstIndex(of: settings.textRecognitionMode) ?? 0)
+        textKeepLineBreaksSwitch.state = settings.textCaptureKeepsLineBreaks ? .on : .off
+        textDetectTablesSwitch.state = settings.textCaptureDetectsTables ? .on : .off
+        textDetectCodesSwitch.state = settings.textCaptureDetectsCodes ? .on : .off
+        textOpenCodeLinksSwitch.state = settings.textCaptureOpensCodeLinks ? .on : .off
+        textSaveHistorySwitch.state = settings.textCaptureSavesHistory ? .on : .off
+    }
+
+    @objc private func showTextCaptureHistory() {
+        delegate?.preferencesDidRequestTextCaptureHistory()
+    }
+
+    @objc private func clearTextCaptureHistory() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clear text capture history?"
+        alert.informativeText = "This removes every saved capture from this Mac. Text already on the clipboard stays there."
+        alert.addButton(withTitle: "Clear History").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            MainActor.assumeIsolated {
+                self?.delegate?.preferencesDidRequestClearTextCaptureHistory()
+                self?.setFeedback("Text capture history cleared.")
+            }
+        }
     }
 
     private func buildDemoMirrorSection() -> NSView {
@@ -870,6 +1007,14 @@ final class PreferencesWindowController: NSWindowController {
         )
         settings.demoMirrorTrackWindowRegion = demoMirrorTrackWindowCheckbox.state == .on
         settings.demoMirrorTargetDisplayID = selectedDemoMirrorTargetDisplayID
+        settings.textRecognitionLanguage = textLanguagePopUp.selectedItem?.representedObject as? String
+        settings.textRecognitionMode = (textModePopUp.selectedItem?.representedObject as? String)
+            .flatMap(TextRecognitionMode.init(rawValue:)) ?? .accurate
+        settings.textCaptureKeepsLineBreaks = textKeepLineBreaksSwitch.state == .on
+        settings.textCaptureDetectsTables = textDetectTablesSwitch.state == .on
+        settings.textCaptureDetectsCodes = textDetectCodesSwitch.state == .on
+        settings.textCaptureOpensCodeLinks = textOpenCodeLinksSwitch.state == .on
+        settings.textCaptureSavesHistory = textSaveHistorySwitch.state == .on
         return settings
     }
 

@@ -64,6 +64,17 @@ cat > "$CONTENTS_DIR/Info.plist" << PLIST
     <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>${BUNDLE_ID}</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>zoomit</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

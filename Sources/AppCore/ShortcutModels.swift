@@ -184,7 +184,10 @@ public enum ShortcutCatalog {
         [.zoom, .liveZoom],
         [.draw, .liveDraw],
         [.record, .cropRecord, .windowRecord],
-        [.snip, .saveSnip, .ocrSnip],
+        [.snip, .saveSnip],
+        // The menu appends the text-capture commands that have no shortcut
+        // (clipboard, file, history) after this block.
+        [.ocrSnip],
         [.panorama, .savePanorama],
         [.demoMirror, .demoMirrorRegion, .demoMirrorWindow],
         [.demoType, .previousDemoType],

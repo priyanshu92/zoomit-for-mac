@@ -9,12 +9,18 @@ struct SnipCaptureResult {
     let message: String
 }
 
+/// A user-selected screen region, cropped out of a frozen snapshot.
+struct SnipRegionCapture: Sendable {
+    let image: CGImage
+    /// Selection in global AppKit screen coordinates (origin bottom-left of the main display).
+    let selection: CGRect
+}
+
 enum SnipControllerError: LocalizedError {
     case selectionCancelled
     case captureUnavailable
     case cropFailed
     case saveFailed(String)
-    case ocrFailed
 
     var errorDescription: String? {
         switch self {
@@ -26,8 +32,6 @@ enum SnipControllerError: LocalizedError {
             return "The selected region could not be cropped."
         case let .saveFailed(path):
             return "The capture could not be saved to \(path)."
-        case .ocrFailed:
-            return "The selected region did not produce recognizable text."
         }
     }
 }
@@ -62,18 +66,15 @@ private struct SnipSelectionOutcome {
 final class SnipController {
     private let screenCaptureService: ScreenCaptureService
     private let clipboardService: ClipboardService
-    private let ocrService: OCRService
     private let settingsStore: AppSettingsStore
 
     init(
         screenCaptureService: ScreenCaptureService,
         clipboardService: ClipboardService,
-        ocrService: OCRService,
         settingsStore: AppSettingsStore
     ) {
         self.screenCaptureService = screenCaptureService
         self.clipboardService = clipboardService
-        self.ocrService = ocrService
         self.settingsStore = settingsStore
     }
 
@@ -93,21 +94,14 @@ final class SnipController {
         try interactiveCapture(snapshot: snapshot, defaultDestination: .file)
     }
 
-    func captureOCRText() throws -> SnipCaptureResult {
-        let snapshot = try snapshotUnderMouse()
-        return try captureOCRText(from: snapshot)
-    }
-
-    func captureOCRText(from snapshot: ScreenSnapshot) throws -> SnipCaptureResult {
-        let selection = try selectRegion(from: snapshot)
-        let croppedImage = try croppedImage(from: snapshot, selection: selection)
-        let text = try recognizeTextWithFallbacks(in: croppedImage)
-        clipboardService.copy(text: text)
-
-        let lineCount = text.split(separator: "\n").count
-        return SnipCaptureResult(
-            title: "OCR text copied to clipboard",
-            message: "Recognized \(lineCount) line\(lineCount == 1 ? "" : "s") from the selected snip."
+    /// Freezes the display under the pointer (unless `snapshot` is supplied), lets the user
+    /// drag a region, and returns it cropped. Enter selects the full display.
+    func selectRegionImage(from snapshot: ScreenSnapshot?, prompt: String) throws -> SnipRegionCapture {
+        let snapshot = try snapshot ?? snapshotUnderMouse()
+        let selection = try selectRegion(from: snapshot, prompt: prompt)
+        return SnipRegionCapture(
+            image: try croppedImage(from: snapshot, selection: selection),
+            selection: selection
         )
     }
 
@@ -171,12 +165,16 @@ final class SnipController {
         return snapshot
     }
 
-    private func selectCaptureOutcome(from snapshot: ScreenSnapshot, defaultDestination: SnipCaptureDestination) throws -> SnipSelectionOutcome {
+    private func selectCaptureOutcome(
+        from snapshot: ScreenSnapshot,
+        defaultDestination: SnipCaptureDestination,
+        prompt: String? = nil
+    ) throws -> SnipSelectionOutcome {
         guard let screen = NSScreen.screens.first(where: { $0.frame == snapshot.screenFrame }) else {
             throw SnipControllerError.captureUnavailable
         }
 
-        let selector = SnipRegionSelector(snapshot: snapshot, screen: screen)
+        let selector = SnipRegionSelector(snapshot: snapshot, screen: screen, prompt: prompt)
         guard let outcome = selector.run(defaultDestination: defaultDestination) else {
             throw SnipControllerError.selectionCancelled
         }
@@ -184,8 +182,8 @@ final class SnipController {
         return outcome
     }
 
-    private func selectRegion(from snapshot: ScreenSnapshot) throws -> CGRect {
-        let outcome = try selectCaptureOutcome(from: snapshot, defaultDestination: .clipboard)
+    private func selectRegion(from snapshot: ScreenSnapshot, prompt: String) throws -> CGRect {
+        let outcome = try selectCaptureOutcome(from: snapshot, defaultDestination: .clipboard, prompt: prompt)
         switch outcome.action {
         case .copySelection, .saveSelection:
             guard let selection = outcome.selection else {
@@ -210,58 +208,6 @@ final class SnipController {
         }
 
         return image
-    }
-
-    private func recognizeTextWithFallbacks(in image: CGImage) throws -> String {
-        let candidates = [image] + enhancedOCRCandidates(from: image)
-
-        for candidate in candidates {
-            if let text = try? ocrService.recognizeText(in: candidate), !text.isEmpty {
-                return text
-            }
-        }
-
-        throw SnipControllerError.ocrFailed
-    }
-
-    private func enhancedOCRCandidates(from image: CGImage) -> [CGImage] {
-        var results: [CGImage] = []
-        if let grayscale = transformed(image: image, scale: 1.0, grayscale: true) {
-            results.append(grayscale)
-        }
-        if let upscaled = transformed(image: image, scale: 2.0, grayscale: false) {
-            results.append(upscaled)
-        }
-        if let upscaledGrayscale = transformed(image: image, scale: 2.0, grayscale: true) {
-            results.append(upscaledGrayscale)
-        }
-        return results
-    }
-
-    private func transformed(image: CGImage, scale: CGFloat, grayscale: Bool) -> CGImage? {
-        let width = max(Int(CGFloat(image.width) * scale), 1)
-        let height = max(Int(CGFloat(image.height) * scale), 1)
-        let colorSpace = grayscale ? CGColorSpaceCreateDeviceGray() : (image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB))
-
-        let bitmapInfo: UInt32 = grayscale ? CGImageAlphaInfo.none.rawValue : CGImageAlphaInfo.premultipliedFirst.rawValue
-        guard
-            let colorSpace,
-            let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo
-            )
-        else {
-            return nil
-        }
-
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
     }
 
     private func save(image: NSImage, prefix: String, fileExtension: String) throws -> URL {
@@ -308,13 +254,15 @@ final class SnipController {
 private final class SnipRegionSelector {
     private let snapshot: ScreenSnapshot
     private let screen: NSScreen
+    private let prompt: String?
     private var window: NSWindow?
     private var overlayView: SnipSelectionView?
     private var outcome: SnipSelectionOutcome?
 
-    init(snapshot: ScreenSnapshot, screen: NSScreen) {
+    init(snapshot: ScreenSnapshot, screen: NSScreen, prompt: String?) {
         self.snapshot = snapshot
         self.screen = screen
+        self.prompt = prompt
     }
 
     func run(defaultDestination: SnipCaptureDestination) -> SnipSelectionOutcome? {
@@ -335,7 +283,8 @@ private final class SnipRegionSelector {
         let overlayView = SnipSelectionView(
             frame: CGRect(origin: .zero, size: screen.frame.size),
             snapshot: snapshot,
-            defaultDestination: defaultDestination
+            defaultDestination: defaultDestination,
+            prompt: prompt
         )
         overlayView.autoresizingMask = [.width, .height]
         overlayView.selectionHandler = { [weak self] result in
@@ -373,15 +322,17 @@ private final class SnipSelectionView: NSView {
 
     private let snapshot: ScreenSnapshot
     private let defaultDestination: SnipCaptureDestination
-    private let selectionLabel = NSTextField(labelWithString: "No region selected yet")
+    private let idleLabelText: String
+    private let selectionLabel = NSTextField(labelWithString: "")
     private var dragOrigin: CGPoint?
     private var selectionRect: CGRect?
 
     override var acceptsFirstResponder: Bool { true }
 
-    init(frame frameRect: NSRect, snapshot: ScreenSnapshot, defaultDestination: SnipCaptureDestination) {
+    init(frame frameRect: NSRect, snapshot: ScreenSnapshot, defaultDestination: SnipCaptureDestination, prompt: String?) {
         self.snapshot = snapshot
         self.defaultDestination = defaultDestination
+        self.idleLabelText = prompt ?? "No region selected yet"
         super.init(frame: frameRect)
         wantsLayer = true
         setupLabels()
@@ -541,6 +492,7 @@ private final class SnipSelectionView: NSView {
         selectionLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         selectionLabel.textColor = .white
         selectionLabel.backgroundColor = .clear
+        selectionLabel.stringValue = idleLabelText
 
         addSubview(selectionLabel)
 
@@ -553,7 +505,7 @@ private final class SnipSelectionView: NSView {
 
     private func updateSelectionLabel() {
         guard let selectionRect, selectionRect.width > 0, selectionRect.height > 0 else {
-            selectionLabel.stringValue = "No region selected yet"
+            selectionLabel.stringValue = idleLabelText
             return
         }
 

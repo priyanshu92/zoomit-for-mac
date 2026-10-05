@@ -13,6 +13,7 @@ final class FeatureCoordinator {
     private let drawOverlayController: DrawOverlayController
     private let recordingController: RecordingController
     private let snipController: SnipController
+    private let textCaptureController: TextCaptureController
     private let panoramaController: PanoramaController
     private let notificationController: AppNotificationController
     private var demoMirrorController: DemoMirrorController?
@@ -24,6 +25,7 @@ final class FeatureCoordinator {
         screenCaptureService: ScreenCaptureService,
         clipboardService: ClipboardService,
         ocrService: OCRService,
+        textCaptureHistoryStore: TextCaptureHistoryStore,
         notificationController: AppNotificationController,
         onPanoramaActivityChanged: @escaping (Bool) -> Void = { _ in },
         onDemoMirrorActivityChanged: @escaping (Bool) -> Void = { _ in }
@@ -51,11 +53,19 @@ final class FeatureCoordinator {
             clipboardService: clipboardService,
             settingsStore: settingsStore
         )
-        self.snipController = SnipController(
+        let snipController = SnipController(
             screenCaptureService: screenCaptureService,
             clipboardService: clipboardService,
-            ocrService: ocrService,
             settingsStore: settingsStore
+        )
+        self.snipController = snipController
+        self.textCaptureController = TextCaptureController(
+            snipController: snipController,
+            clipboardService: clipboardService,
+            ocrService: ocrService,
+            settingsStore: settingsStore,
+            historyStore: textCaptureHistoryStore,
+            shortcutStore: shortcutStore
         )
         self.panoramaController = PanoramaController(
             screenCaptureService: screenCaptureService,
@@ -76,6 +86,9 @@ final class FeatureCoordinator {
         )
         self.drawOverlayController.onShortcutAction = { [weak self] action in
             self?.trigger(action)
+        }
+        self.textCaptureController.onRequestScreenCapture = { [weak self] reopensHistory in
+            self?.captureTextFromScreen(preCapturedImage: nil, reopensHistory: reopensHistory)
         }
         self.recordingController.onResult = { [weak self] result in
             switch result {
@@ -246,28 +259,7 @@ final class FeatureCoordinator {
         }
 
         if action == .ocrSnip {
-            guard permissions.screenRecording == .granted else {
-                presentMissingPermissionNotification(for: action, permissions: permissions)
-                return
-            }
-
-            do {
-                let result: SnipCaptureResult
-                if let preCapturedImage, let snapshot = makeSnapshotFromPreCapture(preCapturedImage) {
-                    result = try snipController.captureOCRText(from: snapshot)
-                } else {
-                    result = try snipController.captureOCRText()
-                }
-                presentNotification(
-                    title: result.title,
-                    message: result.message
-                )
-            } catch {
-                presentNotification(
-                    title: "OCR snip failed",
-                    message: error.localizedDescription
-                )
-            }
+            captureTextFromScreen(preCapturedImage: preCapturedImage, reopensHistory: false)
             return
         }
 
@@ -297,6 +289,44 @@ final class FeatureCoordinator {
 
     func stopPanoramaCapture() {
         panoramaController.stopCapture()
+    }
+
+    func prepareTextRecognition() {
+        textCaptureController.prepareRecognizer()
+    }
+
+    func captureTextFromClipboard() {
+        textCaptureController.captureFromClipboard()
+    }
+
+    func captureTextFromFile() {
+        textCaptureController.captureFromFile()
+    }
+
+    func captureText(fromFileAt url: URL) {
+        textCaptureController.captureFromFile(at: url)
+    }
+
+    func showTextCaptureHistory() {
+        textCaptureController.showHistory()
+    }
+
+    func clearTextCaptureHistory() {
+        textCaptureController.clearHistory()
+    }
+
+    private func captureTextFromScreen(preCapturedImage: CGImage?, reopensHistory: Bool) {
+        let permissions = permissionsService.snapshot()
+        guard permissions.screenRecording == .granted else {
+            presentMissingPermissionNotification(for: .ocrSnip, permissions: permissions)
+            if reopensHistory {
+                textCaptureController.showHistory()
+            }
+            return
+        }
+
+        let snapshot = preCapturedImage.flatMap(makeSnapshotFromPreCapture)
+        textCaptureController.captureFromScreen(snapshot: snapshot, reopensHistory: reopensHistory)
     }
 
     func presentStartupError(_ error: Error) {
